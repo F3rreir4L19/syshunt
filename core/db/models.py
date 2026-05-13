@@ -1,8 +1,8 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, Integer, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import JSON, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.db.base import Base, TimestampMixin
 
@@ -27,3 +27,31 @@ class Target(TimestampMixin, Base):
     program_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     last_recon_at: Mapped[datetime | None] = mapped_column(nullable=True)
     recon_depth: Mapped[int] = mapped_column(Integer, default=2)
+
+    findings: Mapped[list["Finding"]] = relationship(back_populates="target")
+
+
+class Finding(TimestampMixin, Base):
+    __tablename__ = "findings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    target_id: Mapped[int] = mapped_column(ForeignKey("targets.id"), index=True)
+    type: Mapped[str] = mapped_column(String(100), index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    parameter: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    severity: Mapped[str] = mapped_column(String(20), default="info", index=True)
+    confidence: Mapped[str] = mapped_column(String(20), default="possible", index=True)
+    exploitation_difficulty: Mapped[str] = mapped_column(
+        String(20),
+        default="medium",
+    )
+    auto_score: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="new", index=True)
+    template_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    raw_evidence: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict_default)
+    screenshots: Mapped[list[str]] = mapped_column(JSON, default=list_default)
+    reviewed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+    target: Mapped[Target] = relationship(back_populates="findings")
