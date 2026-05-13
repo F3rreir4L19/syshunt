@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from core.db.base import Base
 from core.db.models import BountyProgram, Finding, ReconResult, Target
+from core.db.seed import seed_development_data
 
 
 def test_target_model_has_expected_fields() -> None:
@@ -161,3 +162,17 @@ def test_bounty_program_model_can_persist() -> None:
     assert saved is not None
     assert saved.auto_recon_enabled is False
     assert saved.scope == [{"asset": "*.example.com"}]
+
+
+def test_seed_development_data_is_idempotent() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        seed_development_data(session)
+        seed_development_data(session)
+
+        assert session.query(Target).count() == 1
+        assert session.query(Finding).count() == 1
+        assert session.query(ReconResult).count() == 1
+        assert session.query(BountyProgram).count() == 1

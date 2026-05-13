@@ -44,7 +44,7 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 - [x] Model: `ReconResult` com todos os campos do CLAUDE.md
 - [x] Model: `BountyProgram` com todos os campos do CLAUDE.md
 - [x] Migration inicial gerada e testada
-- [ ] Seed script para dados de desenvolvimento
+- [x] Seed script para dados de desenvolvimento
 
 ### Core — Wrappers Iniciais
 - [ ] `tools/base.py` — classe base `ToolWrapper` + `ToolResult` dataclass
