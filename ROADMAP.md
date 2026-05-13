@@ -38,7 +38,7 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 - [x] `Makefile` com comandos: `up`, `down`, `migrate`, `test`, `worker`, `dashboard`
 
 ### Banco de Dados
-- [ ] Configuração SQLAlchemy + Alembic
+- [x] Configuração SQLAlchemy + Alembic
 - [ ] Model: `Target` com todos os campos do CLAUDE.md
 - [ ] Model: `Finding` com todos os campos do CLAUDE.md
 - [ ] Model: `ReconResult` com todos os campos do CLAUDE.md
