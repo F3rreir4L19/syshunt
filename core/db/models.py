@@ -29,6 +29,7 @@ class Target(TimestampMixin, Base):
     recon_depth: Mapped[int] = mapped_column(Integer, default=2)
 
     findings: Mapped[list["Finding"]] = relationship(back_populates="target")
+    recon_results: Mapped[list["ReconResult"]] = relationship(back_populates="target")
 
 
 class Finding(TimestampMixin, Base):
@@ -55,3 +56,20 @@ class Finding(TimestampMixin, Base):
     reviewed_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     target: Mapped[Target] = relationship(back_populates="findings")
+
+
+class ReconResult(TimestampMixin, Base):
+    __tablename__ = "recon_results"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    target_id: Mapped[int] = mapped_column(ForeignKey("targets.id"), index=True)
+    tool: Mapped[str] = mapped_column(String(100), index=True)
+    result_type: Mapped[str] = mapped_column(String(100), index=True)
+    data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict_default)
+    superseded_by: Mapped[int | None] = mapped_column(
+        ForeignKey("recon_results.id"),
+        nullable=True,
+    )
+
+    target: Mapped[Target] = relationship(back_populates="recon_results")
+    superseded_by_result: Mapped["ReconResult | None"] = relationship(remote_side=[id])

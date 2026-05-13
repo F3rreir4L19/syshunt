@@ -2,7 +2,7 @@ from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import Session
 
 from core.db.base import Base
-from core.db.models import Finding, Target
+from core.db.models import Finding, ReconResult, Target
 
 
 def test_target_model_has_expected_fields() -> None:
@@ -86,3 +86,39 @@ def test_finding_model_can_persist_with_target_relationship() -> None:
 
     assert saved.status == "new"
     assert saved.severity == "info"
+
+
+def test_recon_result_model_has_expected_fields() -> None:
+    columns = ReconResult.__table__.columns
+
+    assert set(columns.keys()) >= {
+        "id",
+        "target_id",
+        "tool",
+        "result_type",
+        "data",
+        "created_at",
+        "updated_at",
+        "superseded_by",
+    }
+
+
+def test_recon_result_model_can_persist_with_target() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        target = Target(domain="example.com")
+        result = ReconResult(
+            target=target,
+            tool="subfinder",
+            result_type="subdomain",
+            data={"value": "api.example.com"},
+        )
+        session.add(result)
+        session.commit()
+
+        saved = session.get(ReconResult, result.id)
+        assert saved is not None
+        assert saved.target.domain == "example.com"
+        assert saved.data["value"] == "api.example.com"
