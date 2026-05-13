@@ -33,7 +33,7 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 - [x] Criar estrutura de diretórios conforme CLAUDE.md
 - [x] `pyproject.toml` com dependências (sqlalchemy, alembic, celery, redis, anthropic, streamlit, structlog, pytest, black, ruff)
 - [x] `Dockerfile.worker` (Python 3.12 + tools de segurança instalados)
-- [ ] `Dockerfile.dashboard` (Python 3.12 + streamlit)
+- [x] `Dockerfile.dashboard` (Python 3.12 + streamlit)
 - [ ] `.env.example` com todas as variáveis necessárias
 - [ ] `Makefile` com comandos: `up`, `down`, `migrate`, `test`, `worker`, `dashboard`
 

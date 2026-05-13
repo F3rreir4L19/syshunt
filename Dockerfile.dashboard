@@ -1,0 +1,18 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+COPY pyproject.toml README.md ./
+COPY core ./core
+COPY dashboard ./dashboard
+COPY tools ./tools
+
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -e .
+
+EXPOSE 8501
+
+CMD ["streamlit", "run", "dashboard/app.py", "--server.address=0.0.0.0", "--server.port=8501"]
