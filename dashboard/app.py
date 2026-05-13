@@ -4,7 +4,7 @@ import streamlit as st
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from core.db.models import Target
+from core.db.models import Finding, Target
 from core.db.session import SessionLocal
 
 
@@ -72,7 +72,44 @@ def render_targets_page() -> None:
 
 def render_findings_page() -> None:
     st.header("Findings")
-    st.info("Finding triage will be available in this phase.")
+    with SessionLocal() as session:
+        severity_filter = st.multiselect(
+            "Severity",
+            ["critical", "high", "medium", "low", "info"],
+            default=[],
+        )
+        status_filter = st.multiselect(
+            "Status",
+            ["new", "reviewing", "valid", "reported", "closed"],
+            default=[],
+        )
+        text_filter = st.text_input("Search", placeholder="title, URL, template")
+        findings = list_findings(
+            session,
+            severities=severity_filter,
+            statuses=status_filter,
+            search=text_filter,
+        )
+
+    if not findings:
+        st.info("No findings match the current filters.")
+        return
+
+    st.dataframe(
+        findings,
+        hide_index=True,
+        use_container_width=True,
+        column_order=[
+            "id",
+            "severity",
+            "status",
+            "title",
+            "target",
+            "url",
+            "confidence",
+            "auto_score",
+        ],
+    )
 
 
 def render_placeholder_page(title: str) -> None:
@@ -133,6 +170,48 @@ def list_targets(session: Session) -> list[dict[str, object]]:
             "last_recon_at": target.last_recon_at,
         }
         for target in targets
+    ]
+
+
+def list_findings(
+    session: Session,
+    severities: list[str] | None = None,
+    statuses: list[str] | None = None,
+    search: str = "",
+) -> list[dict[str, object]]:
+    query = session.query(Finding).join(Target).order_by(Finding.created_at.desc())
+
+    if severities:
+        query = query.filter(Finding.severity.in_(severities))
+    if statuses:
+        query = query.filter(Finding.status.in_(statuses))
+
+    cleaned_search = search.strip().lower()
+    findings = query.all()
+    if cleaned_search:
+        findings = [
+            finding
+            for finding in findings
+            if cleaned_search in finding.title.lower()
+            or (finding.url is not None and cleaned_search in finding.url.lower())
+            or (
+                finding.template_id is not None
+                and cleaned_search in finding.template_id.lower()
+            )
+        ]
+
+    return [
+        {
+            "id": finding.id,
+            "severity": finding.severity,
+            "status": finding.status,
+            "title": finding.title,
+            "target": finding.target.domain,
+            "url": finding.url or "",
+            "confidence": finding.confidence,
+            "auto_score": finding.auto_score,
+        }
+        for finding in findings
     ]
 
 

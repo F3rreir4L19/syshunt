@@ -64,7 +64,7 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 ### Dashboard — Fase 1 (Mínimo Viável)
 - [x] `dashboard/app.py` — entry point Streamlit com navegação
 - [x] Página Targets: listar targets + adicionar target manual
-- [ ] Página Findings: tabela básica de findings com filtros simples
+- [x] Página Findings: tabela básica de findings com filtros simples
 - [ ] Indicador de status de pipeline (polling Redis)
 
 ---
