@@ -47,7 +47,7 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 - [x] Seed script para dados de desenvolvimento
 
 ### Core — Wrappers Iniciais
-- [ ] `tools/base.py` — classe base `ToolWrapper` + `ToolResult` dataclass
+- [x] `tools/base.py` — classe base `ToolWrapper` + `ToolResult` dataclass
 - [ ] `tools/subfinder_wrapper.py` — wrapper com tests
 - [ ] `tools/httpx_wrapper.py` — wrapper com tests
 - [ ] `tools/nuclei_wrapper.py` — wrapper com tests
