@@ -48,7 +48,7 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 
 ### Core — Wrappers Iniciais
 - [x] `tools/base.py` — classe base `ToolWrapper` + `ToolResult` dataclass
-- [ ] `tools/subfinder_wrapper.py` — wrapper com tests
+- [x] `tools/subfinder_wrapper.py` — wrapper com tests
 - [ ] `tools/httpx_wrapper.py` — wrapper com tests
 - [ ] `tools/nuclei_wrapper.py` — wrapper com tests
 - [ ] Testes unitários mocando subprocess (sem precisar das tools instaladas)
