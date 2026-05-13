@@ -35,7 +35,7 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 - [x] `Dockerfile.worker` (Python 3.12 + tools de segurança instalados)
 - [x] `Dockerfile.dashboard` (Python 3.12 + streamlit)
 - [x] `.env.example` com todas as variáveis necessárias
-- [ ] `Makefile` com comandos: `up`, `down`, `migrate`, `test`, `worker`, `dashboard`
+- [x] `Makefile` com comandos: `up`, `down`, `migrate`, `test`, `worker`, `dashboard`
 
 ### Banco de Dados
 - [ ] Configuração SQLAlchemy + Alembic
