@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from celery import Celery
+from celery import Celery, chain
 
 from typing import Any
 
@@ -165,6 +165,22 @@ def run_nuclei_scan(target_id: int) -> dict[str, int | str]:
             "tool": "nuclei",
             "created": created,
         }
+
+
+@celery_app.task(name="core.pipeline.run_full_pipeline")
+def run_full_pipeline(target_id: int) -> dict[str, int | str]:
+    workflow = chain(
+        run_subdomain_enum.si(target_id),
+        run_http_probe.si(target_id),
+        run_nuclei_scan.si(target_id),
+    )
+    result = workflow.apply_async()
+
+    return {
+        "target_id": target_id,
+        "workflow_id": result.id or "",
+        "status": "scheduled",
+    }
 
 
 def _finding_from_nuclei_result(target_id: int, data: dict[str, Any]) -> Finding:
