@@ -10,8 +10,8 @@
 
 **Prompt de abertura de sessão (copie e adapte):**
 ```
-Leia o CLAUDE.md e o ROADMAP.md do projeto BugHunter.
-Estou na [FASE X — NOME DA FASE].
+Leia o CLAUDE.md e o ROADMAP.md do projeto Syshunt.
+Estou na [FASE 1 — FUNDAÇÃO DO PROJETO].
 Execute as tasks pendentes nessa fase.
 Após cada task: rode os testes, faça commit com mensagem descritiva.
 Atualize os checkboxes no ROADMAP.md ao concluir cada item.
@@ -30,8 +30,8 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 *Objetivo: projeto rodando localmente com pipeline básico funcional*
 
 ### Setup Inicial
-- [ ] Criar estrutura de diretórios conforme CLAUDE.md
-- [ ] `pyproject.toml` com dependências (sqlalchemy, alembic, celery, redis, anthropic, streamlit, structlog, pytest, black, ruff)
+- [x] Criar estrutura de diretórios conforme CLAUDE.md
+- [x] `pyproject.toml` com dependências (sqlalchemy, alembic, celery, redis, anthropic, streamlit, structlog, pytest, black, ruff)
 - [ ] `Dockerfile.worker` (Python 3.12 + tools de segurança instalados)
 - [ ] `Dockerfile.dashboard` (Python 3.12 + streamlit)
 - [ ] `.env.example` com todas as variáveis necessárias

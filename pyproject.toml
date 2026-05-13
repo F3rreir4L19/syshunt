@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "syshunt"
+version = "0.1.0"
+description = "Automated bug bounty recon and finding triage system."
+readme = { text = "Automated bug bounty recon and finding triage system.", content-type = "text/plain" }
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.13",
+    "anthropic>=0.49",
+    "celery[redis]>=5.4",
+    "psycopg[binary]>=3.2",
+    "python-dotenv>=1.0",
+    "redis>=5.2",
+    "sqlalchemy>=2.0",
+    "streamlit>=1.42",
+    "structlog>=25.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black>=25.1",
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "ruff>=0.9",
+]
+
+[tool.setuptools.packages.find]
+include = ["core*", "dashboard*", "tools*"]
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
