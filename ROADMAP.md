@@ -65,7 +65,7 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 - [x] `dashboard/app.py` — entry point Streamlit com navegação
 - [x] Página Targets: listar targets + adicionar target manual
 - [x] Página Findings: tabela básica de findings com filtros simples
-- [ ] Indicador de status de pipeline (polling Redis)
+- [x] Indicador de status de pipeline (polling Redis)
 
 ---
 

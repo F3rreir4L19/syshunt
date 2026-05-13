@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import streamlit as st
+from celery import Celery
+from redis import Redis
+from redis.exceptions import RedisError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from core.db.models import Finding, Target
 from core.db.session import SessionLocal
+from core.pipeline.tasks import celery_app, get_redis_url
 
 
 PAGE_TARGETS = "Targets"
@@ -25,6 +29,13 @@ def configure_page() -> None:
 
 def render_sidebar() -> str:
     st.sidebar.title("Syshunt")
+    pipeline_status = get_pipeline_status(celery_app)
+    st.sidebar.metric("Pipeline", pipeline_status["state"])
+    if pipeline_status["queued"] is not None:
+        st.sidebar.caption(f"Queued tasks: {pipeline_status['queued']}")
+    elif pipeline_status["error"]:
+        st.sidebar.caption(str(pipeline_status["error"]))
+
     return st.sidebar.radio(
         "Navigation",
         [PAGE_TARGETS, PAGE_FINDINGS, PAGE_PROGRAMS, PAGE_SETTINGS],
@@ -213,6 +224,27 @@ def list_findings(
         }
         for finding in findings
     ]
+
+
+def get_pipeline_status(app: Celery) -> dict[str, object]:
+    redis_url = str(app.conf.broker_url or get_redis_url())
+
+    try:
+        client = Redis.from_url(redis_url, socket_connect_timeout=0.5)
+        client.ping()
+        queued = client.llen("celery")
+    except RedisError as exc:
+        return {
+            "state": "offline",
+            "queued": None,
+            "error": f"Redis unavailable: {exc.__class__.__name__}",
+        }
+
+    return {
+        "state": "online",
+        "queued": int(queued),
+        "error": None,
+    }
 
 
 if __name__ == "__main__":

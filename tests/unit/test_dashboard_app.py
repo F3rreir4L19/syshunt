@@ -83,3 +83,36 @@ def test_list_findings_filters_by_severity_status_and_search() -> None:
     assert len(rows) == 1
     assert rows[0]["title"] == "Exposed admin panel"
     assert rows[0]["target"] == "example.com"
+
+
+def test_get_pipeline_status_reports_online_redis(monkeypatch) -> None:
+    class FakeRedis:
+        def ping(self) -> None:
+            return None
+
+        def llen(self, queue: str) -> int:
+            assert queue == "celery"
+            return 3
+
+    monkeypatch.setattr(app.Redis, "from_url", lambda *args, **kwargs: FakeRedis())
+
+    status = app.get_pipeline_status(app.celery_app)
+
+    assert status == {
+        "state": "online",
+        "queued": 3,
+        "error": None,
+    }
+
+
+def test_get_pipeline_status_reports_offline_redis(monkeypatch) -> None:
+    def raise_error(*args, **kwargs):
+        raise app.RedisError("boom")
+
+    monkeypatch.setattr(app.Redis, "from_url", raise_error)
+
+    status = app.get_pipeline_status(app.celery_app)
+
+    assert status["state"] == "offline"
+    assert status["queued"] is None
+    assert "Redis unavailable" in str(status["error"])
