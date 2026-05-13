@@ -51,7 +51,7 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 - [x] `tools/subfinder_wrapper.py` — wrapper com tests
 - [x] `tools/httpx_wrapper.py` — wrapper com tests
 - [x] `tools/nuclei_wrapper.py` — wrapper com tests
-- [ ] Testes unitários mocando subprocess (sem precisar das tools instaladas)
+- [x] Testes unitários mocando subprocess (sem precisar das tools instaladas)
 
 ### Core — Pipeline Básico
 - [ ] `core/pipeline/tasks.py` — configuração Celery
