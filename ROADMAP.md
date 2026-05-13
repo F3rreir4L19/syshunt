@@ -57,7 +57,7 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 - [x] `core/pipeline/tasks.py` — configuração Celery
 - [x] Task: `run_subdomain_enum(target_id)`
 - [x] Task: `run_http_probe(target_id)`
-- [ ] Task: `run_nuclei_scan(target_id)`
+- [x] Task: `run_nuclei_scan(target_id)`
 - [ ] Task: `run_full_pipeline(target_id)` — chain das 3 anteriores
 - [ ] Testes de integração do pipeline (com docker de teste)
 
