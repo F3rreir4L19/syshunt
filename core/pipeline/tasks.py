@@ -4,6 +4,10 @@ import os
 
 from celery import Celery
 
+from core.db.models import ReconResult, Target
+from core.db.session import SessionLocal
+from tools.subfinder_wrapper import SubfinderWrapper
+
 
 DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 
@@ -33,3 +37,36 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
 )
+
+
+@celery_app.task(name="core.pipeline.run_subdomain_enum")
+def run_subdomain_enum(target_id: int) -> dict[str, int | str]:
+    with SessionLocal() as session:
+        target = session.get(Target, target_id)
+        if target is None:
+            raise ValueError(f"Target {target_id} not found")
+
+        result = SubfinderWrapper().run(target.domain)
+        if not result.success:
+            target.status = "subdomain_enum_failed"
+            session.commit()
+            raise RuntimeError(result.error or "subfinder failed")
+
+        for subdomain in result.parsed_data:
+            session.add(
+                ReconResult(
+                    target_id=target.id,
+                    tool="subfinder",
+                    result_type="subdomain",
+                    data={"value": subdomain},
+                )
+            )
+
+        target.status = "subdomain_enum_completed"
+        session.commit()
+
+        return {
+            "target_id": target.id,
+            "tool": "subfinder",
+            "created": len(result.parsed_data),
+        }
