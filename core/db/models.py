@@ -1,10 +1,10 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from core.db.base import Base, TimestampMixin
+from core.db.base import Base, TimestampMixin, utc_now
 
 
 def list_default() -> list[str]:
@@ -73,3 +73,17 @@ class ReconResult(TimestampMixin, Base):
 
     target: Mapped[Target] = relationship(back_populates="recon_results")
     superseded_by_result: Mapped["ReconResult | None"] = relationship(remote_side=[id])
+
+
+class BountyProgram(TimestampMixin, Base):
+    __tablename__ = "bounty_programs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    platform: Mapped[str] = mapped_column(String(50), index=True)
+    program_handle: Mapped[str] = mapped_column(String(255), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    scope: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list_default)
+    bounty_table: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict_default)
+    auto_recon_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_checked_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    first_seen_at: Mapped[datetime] = mapped_column(default=utc_now)

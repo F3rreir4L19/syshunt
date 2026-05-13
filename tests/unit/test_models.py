@@ -2,7 +2,7 @@ from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import Session
 
 from core.db.base import Base
-from core.db.models import Finding, ReconResult, Target
+from core.db.models import BountyProgram, Finding, ReconResult, Target
 
 
 def test_target_model_has_expected_fields() -> None:
@@ -122,3 +122,42 @@ def test_recon_result_model_can_persist_with_target() -> None:
         assert saved is not None
         assert saved.target.domain == "example.com"
         assert saved.data["value"] == "api.example.com"
+
+
+def test_bounty_program_model_has_expected_fields() -> None:
+    columns = BountyProgram.__table__.columns
+
+    assert set(columns.keys()) >= {
+        "id",
+        "platform",
+        "program_handle",
+        "name",
+        "scope",
+        "bounty_table",
+        "auto_recon_enabled",
+        "last_checked_at",
+        "first_seen_at",
+        "created_at",
+        "updated_at",
+    }
+
+
+def test_bounty_program_model_can_persist() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        program = BountyProgram(
+            platform="hackerone",
+            program_handle="example",
+            name="Example Program",
+            scope=[{"asset": "*.example.com"}],
+        )
+        session.add(program)
+        session.commit()
+
+        saved = session.get(BountyProgram, program.id)
+
+    assert saved is not None
+    assert saved.auto_recon_enabled is False
+    assert saved.scope == [{"asset": "*.example.com"}]
