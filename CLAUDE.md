@@ -136,6 +136,8 @@ bughunter/
 - Tasks longas divididas em sub-tasks encadeadas
 - Retry com backoff exponencial em falhas de rede
 - Resultados de recon nunca deletados, apenas marcados como superseded
+- Tasks devem ser testáveis em modo eager (`CELERY_TASK_ALWAYS_EAGER=true`) sem Redis
+  ativo; em runtime, Redis continua sendo o broker/result backend padrão.
 
 ### Wrappers de Ferramentas
 - Cada wrapper: `run(target, options) → ToolResult`

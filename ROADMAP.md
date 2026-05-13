@@ -54,7 +54,7 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 - [x] Testes unitários mocando subprocess (sem precisar das tools instaladas)
 
 ### Core — Pipeline Básico
-- [ ] `core/pipeline/tasks.py` — configuração Celery
+- [x] `core/pipeline/tasks.py` — configuração Celery
 - [ ] Task: `run_subdomain_enum(target_id)`
 - [ ] Task: `run_http_probe(target_id)`
 - [ ] Task: `run_nuclei_scan(target_id)`
