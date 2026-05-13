@@ -39,7 +39,7 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 
 ### Banco de Dados
 - [x] Configuração SQLAlchemy + Alembic
-- [ ] Model: `Target` com todos os campos do CLAUDE.md
+- [x] Model: `Target` com todos os campos do CLAUDE.md
 - [ ] Model: `Finding` com todos os campos do CLAUDE.md
 - [ ] Model: `ReconResult` com todos os campos do CLAUDE.md
 - [ ] Model: `BountyProgram` com todos os campos do CLAUDE.md

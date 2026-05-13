@@ -3,6 +3,7 @@ from logging.config import fileConfig
 from alembic import context
 
 from core.db.base import Base
+from core.db import models  # noqa: F401
 from core.db.session import get_database_url
 
 config = context.config
