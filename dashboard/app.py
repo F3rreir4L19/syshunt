@@ -4,7 +4,7 @@ import streamlit as st
 from celery import Celery
 from redis import Redis
 from redis.exceptions import RedisError
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from core.db.models import Finding, Target
@@ -45,22 +45,26 @@ def render_sidebar() -> str:
 
 def render_targets_page() -> None:
     st.header("Targets")
-    with SessionLocal() as session:
-        with st.form("add-target", clear_on_submit=True):
-            domain = st.text_input("Domain", placeholder="example.com")
-            submitted = st.form_submit_button("Add target")
+    try:
+        with SessionLocal() as session:
+            with st.form("add-target", clear_on_submit=True):
+                domain = st.text_input("Domain", placeholder="example.com")
+                submitted = st.form_submit_button("Add target")
 
-        if submitted:
-            try:
-                create_target(session, domain)
-                st.success("Target added.")
-            except ValueError as exc:
-                st.error(str(exc))
-            except IntegrityError:
-                session.rollback()
-                st.error("Target already exists.")
+            if submitted:
+                try:
+                    create_target(session, domain)
+                    st.success("Target added.")
+                except ValueError as exc:
+                    st.error(str(exc))
+                except IntegrityError:
+                    session.rollback()
+                    st.error("Target already exists.")
 
-        targets = list_targets(session)
+            targets = list_targets(session)
+    except SQLAlchemyError as exc:
+        st.error(f"Database unavailable: {exc.__class__.__name__}")
+        return
 
     if not targets:
         st.info("No targets registered yet.")
@@ -83,24 +87,28 @@ def render_targets_page() -> None:
 
 def render_findings_page() -> None:
     st.header("Findings")
-    with SessionLocal() as session:
-        severity_filter = st.multiselect(
-            "Severity",
-            ["critical", "high", "medium", "low", "info"],
-            default=[],
-        )
-        status_filter = st.multiselect(
-            "Status",
-            ["new", "reviewing", "valid", "reported", "closed"],
-            default=[],
-        )
-        text_filter = st.text_input("Search", placeholder="title, URL, template")
-        findings = list_findings(
-            session,
-            severities=severity_filter,
-            statuses=status_filter,
-            search=text_filter,
-        )
+    try:
+        with SessionLocal() as session:
+            severity_filter = st.multiselect(
+                "Severity",
+                ["critical", "high", "medium", "low", "info"],
+                default=[],
+            )
+            status_filter = st.multiselect(
+                "Status",
+                ["new", "reviewing", "valid", "reported", "closed"],
+                default=[],
+            )
+            text_filter = st.text_input("Search", placeholder="title, URL, template")
+            findings = list_findings(
+                session,
+                severities=severity_filter,
+                statuses=status_filter,
+                search=text_filter,
+            )
+    except SQLAlchemyError as exc:
+        st.error(f"Database unavailable: {exc.__class__.__name__}")
+        return
 
     if not findings:
         st.info("No findings match the current filters.")
