@@ -59,7 +59,7 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 - [x] Task: `run_http_probe(target_id)`
 - [x] Task: `run_nuclei_scan(target_id)`
 - [x] Task: `run_full_pipeline(target_id)` — chain das 3 anteriores
-- [ ] Testes de integração do pipeline (com docker de teste)
+- [x] Testes de integração do pipeline (com docker de teste)
 
 ### Dashboard — Fase 1 (Mínimo Viável)
 - [ ] `dashboard/app.py` — entry point Streamlit com navegação
