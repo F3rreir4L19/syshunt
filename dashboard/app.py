@@ -15,6 +15,7 @@ from core.db.queries import (
     get_target_screenshot_paths,
     list_findings,
     list_targets,
+    normalize_domain,
 )
 from core.db.session import SessionLocal
 from core.pipeline.tasks import celery_app
@@ -103,14 +104,22 @@ def render_targets_page() -> None:
                     submitted = st.form_submit_button("Add target")
 
                 if submitted:
-                    try:
-                        create_target(session, domain)
-                        st.success("Target added.")
-                    except ValueError as exc:
-                        st.error(str(exc))
-                    except IntegrityError:
-                        session.rollback()
-                        st.error("Target already exists.")
+                    if not domain or not domain.strip():
+                        st.error("Domain is required.")
+                    else:
+                        try:
+                            normalize_domain(domain)
+                        except ValueError as exc:
+                            st.error(f"Invalid domain: {exc}")
+                        else:
+                            try:
+                                create_target(session, domain)
+                                st.success("Target added.")
+                            except ValueError as exc:
+                                st.error(str(exc))
+                            except IntegrityError:
+                                session.rollback()
+                                st.error("Target already exists.")
         except SQLAlchemyError as exc:
             st.error(f"Database unavailable: {exc.__class__.__name__}")
 
