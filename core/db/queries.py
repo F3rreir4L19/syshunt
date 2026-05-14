@@ -10,7 +10,7 @@ from redis import Redis
 from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 
-from core.db.models import Finding, ReconResult, Target
+from core.db.models import Finding, ReconResult, SystemSetting, Target
 
 # Valid domain: labels of letters/digits/hyphens separated by dots, no leading/trailing
 # hyphens per label.  Also accepts plain hostnames without a dot (e.g. "localhost").
@@ -251,6 +251,40 @@ def get_pipeline_status(app: Celery) -> dict[str, object]:
 # ---------------------------------------------------------------------------
 # ReconResult helpers — deduplication and re-scan supersession
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# System settings
+# ---------------------------------------------------------------------------
+
+
+def get_setting(session: Session, key: str, default: str | None = None) -> str | None:
+    """Return the value for *key* from system_settings, or *default* if absent."""
+    row = session.get(SystemSetting, key)
+    if row is None or row.value is None:
+        return default
+    return row.value
+
+
+def set_setting(session: Session, key: str, value: str | None) -> None:
+    """Persist *value* for *key* in system_settings.
+
+    Passing None or an empty string removes the entry (reverts to env var fallback).
+    """
+    from datetime import UTC, datetime
+
+    if not value:
+        row = session.get(SystemSetting, key)
+        if row is not None:
+            session.delete(row)
+        return
+
+    row = session.get(SystemSetting, key)
+    if row is None:
+        session.add(SystemSetting(key=key, value=value, updated_at=datetime.now(UTC)))
+    else:
+        row.value = value
+        row.updated_at = datetime.now(UTC)
 
 
 def _data_hash(data: dict[str, Any]) -> str:

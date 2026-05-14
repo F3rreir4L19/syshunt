@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.db.base import Base, TimestampMixin, utc_now
@@ -77,6 +77,20 @@ class ReconResult(TimestampMixin, Base):
 
     target: Mapped[Target] = relationship(back_populates="recon_results")
     superseded_by_result: Mapped["ReconResult | None"] = relationship(remote_side=[id])
+
+
+class SystemSetting(Base):
+    """Key/value store for persistent system configuration.
+
+    API keys and other sensitive values are stored here as fallback when env
+    vars are absent.  Keys are the primary key; updated_at tracks last change.
+    """
+
+    __tablename__ = "system_settings"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
 
 
 class BountyProgram(TimestampMixin, Base):
