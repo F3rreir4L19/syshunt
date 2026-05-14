@@ -38,6 +38,35 @@ def create_target(session: Session, domain: str) -> Target:
     return target
 
 
+def bulk_create_targets(
+    session: Session, domains: list[str]
+) -> tuple[int, int, list[str]]:
+    """Create multiple targets from a list of domain strings.
+
+    Returns (created, skipped, errors) where errors is a list of problem strings.
+    Skips duplicates silently (existing domain = already present).
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    created = 0
+    skipped = 0
+    errors: list[str] = []
+    for raw in domains:
+        normalized = normalize_domain(raw)
+        if not normalized:
+            errors.append(f"Empty domain (raw: {raw!r})")
+            continue
+        try:
+            session.add(Target(domain=normalized, scope_includes=[normalized]))
+            session.flush()
+            created += 1
+        except IntegrityError:
+            session.rollback()
+            skipped += 1
+    session.commit()
+    return created, skipped, errors
+
+
 def list_targets(session: Session) -> list[dict[str, object]]:
     targets = session.query(Target).order_by(Target.created_at.desc()).all()
     return [
@@ -63,6 +92,10 @@ def list_findings(
     severities: list[str] | None = None,
     statuses: list[str] | None = None,
     search: str = "",
+    target_id: int | None = None,
+    vuln_types: list[str] | None = None,
+    score_min: int = 0,
+    score_max: int = 100,
 ) -> list[dict[str, object]]:
     query = session.query(Finding).join(Target).order_by(Finding.created_at.desc())
 
@@ -70,6 +103,14 @@ def list_findings(
         query = query.filter(Finding.severity.in_(severities))
     if statuses:
         query = query.filter(Finding.status.in_(statuses))
+    if target_id is not None:
+        query = query.filter(Finding.target_id == target_id)
+    if vuln_types:
+        query = query.filter(Finding.type.in_(vuln_types))
+    query = query.filter(
+        Finding.auto_score >= score_min,
+        Finding.auto_score <= score_max,
+    )
 
     cleaned_search = search.strip().lower()
     findings = query.all()
@@ -89,12 +130,56 @@ def list_findings(
             "status": f.status,
             "title": f.title,
             "target": f.target.domain,
+            "target_id": f.target_id,
             "url": f.url or "",
             "confidence": f.confidence,
             "auto_score": f.auto_score,
+            "type": f.type,
+            "description": f.description or "",
+            "exploitation_difficulty": f.exploitation_difficulty,
+            "raw_evidence": f.raw_evidence,
         }
         for f in findings
     ]
+
+
+def get_finding(session: Session, finding_id: int) -> dict[str, object] | None:
+    """Return full details for a single finding, or None if not found."""
+    f = session.get(Finding, finding_id)
+    if f is None:
+        return None
+    return {
+        "id": f.id,
+        "title": f.title,
+        "type": f.type,
+        "severity": f.severity,
+        "confidence": f.confidence,
+        "exploitation_difficulty": f.exploitation_difficulty,
+        "auto_score": f.auto_score,
+        "status": f.status,
+        "url": f.url or "",
+        "description": f.description or "",
+        "template_id": f.template_id or "",
+        "raw_evidence": f.raw_evidence,
+        "screenshots": f.screenshots,
+        "target_id": f.target_id,
+        "target_domain": f.target.domain,
+        "created_at": f.created_at,
+        "reviewed_at": f.reviewed_at,
+    }
+
+
+def get_target_screenshot_paths(target_id: int, output_dir: str) -> list[str]:
+    """List screenshot image paths for a target from the filesystem."""
+    import os
+    from pathlib import Path
+
+    shot_dir = Path(output_dir) / "screenshots" / str(target_id)
+    if not shot_dir.exists():
+        return []
+    return sorted(
+        str(p) for p in shot_dir.iterdir() if p.suffix.lower() in {".png", ".jpg", ".jpeg"}
+    )
 
 
 # ---------------------------------------------------------------------------

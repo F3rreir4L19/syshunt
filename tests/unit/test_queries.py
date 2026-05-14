@@ -1,8 +1,10 @@
+from pathlib import Path
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from core.db.base import Base
-from core.db.models import ReconResult, Target
+from core.db.models import Finding, ReconResult, Target
 from core.db import queries
 
 
@@ -132,3 +134,139 @@ def test_rescan_supersedes_removed_results() -> None:
     # Superseded: old.example.com (absent from new scan)
     assert len(superseded) == 1
     assert superseded[0].data["value"] == "old.example.com"
+
+
+# ---------------------------------------------------------------------------
+# bulk_create_targets
+# ---------------------------------------------------------------------------
+
+
+def test_bulk_create_targets_inserts_all_valid_domains() -> None:
+    with build_session() as session:
+        created, skipped, errors = queries.bulk_create_targets(
+            session, ["example.com", "test.io", "https://strip-me.com/"]
+        )
+
+    assert created == 3
+    assert skipped == 0
+    assert errors == []
+
+
+def test_bulk_create_targets_skips_duplicates() -> None:
+    with build_session() as session:
+        queries.bulk_create_targets(session, ["example.com"])
+        created, skipped, errors = queries.bulk_create_targets(
+            session, ["example.com", "new.com"]
+        )
+
+    assert created == 1
+    assert skipped == 1
+
+
+def test_bulk_create_targets_reports_empty_domains() -> None:
+    with build_session() as session:
+        created, skipped, errors = queries.bulk_create_targets(session, ["", "  "])
+
+    assert created == 0
+    assert len(errors) == 2
+
+
+# ---------------------------------------------------------------------------
+# get_finding
+# ---------------------------------------------------------------------------
+
+
+def test_get_finding_returns_full_detail() -> None:
+    with build_session() as session:
+        target = Target(domain="example.com")
+        session.add(target)
+        session.flush()
+        finding = Finding(
+            target_id=target.id,
+            type="xss",
+            title="XSS in search",
+            severity="high",
+            url="https://example.com/search?q=<>",
+            confidence="likely",
+        )
+        session.add(finding)
+        session.commit()
+        fid = finding.id
+
+        result = queries.get_finding(session, fid)
+
+    assert result is not None
+    assert result["title"] == "XSS in search"
+    assert result["severity"] == "high"
+    assert result["target_domain"] == "example.com"
+
+
+def test_get_finding_returns_none_for_missing_id() -> None:
+    with build_session() as session:
+        result = queries.get_finding(session, 99999)
+
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# list_findings advanced filters
+# ---------------------------------------------------------------------------
+
+
+def test_list_findings_filters_by_score_range() -> None:
+    with build_session() as session:
+        target = Target(domain="example.com")
+        session.add(target)
+        session.flush()
+        session.add_all([
+            Finding(target_id=target.id, type="a", title="low score", severity="info", auto_score=10),
+            Finding(target_id=target.id, type="b", title="high score", severity="high", auto_score=80),
+        ])
+        session.commit()
+
+        rows = queries.list_findings(session, score_min=50, score_max=100)
+
+    assert len(rows) == 1
+    assert rows[0]["title"] == "high score"
+
+
+def test_list_findings_filters_by_target_id() -> None:
+    with build_session() as session:
+        t1 = Target(domain="example.com")
+        t2 = Target(domain="other.com")
+        session.add_all([t1, t2])
+        session.flush()
+        session.add_all([
+            Finding(target_id=t1.id, type="a", title="from t1", severity="info"),
+            Finding(target_id=t2.id, type="b", title="from t2", severity="info"),
+        ])
+        session.commit()
+
+        rows = queries.list_findings(session, target_id=t1.id)
+
+    assert len(rows) == 1
+    assert rows[0]["title"] == "from t1"
+
+
+# ---------------------------------------------------------------------------
+# get_target_screenshot_paths
+# ---------------------------------------------------------------------------
+
+
+def test_get_target_screenshot_paths_returns_png_files(tmp_path: Path) -> None:
+    shot_dir = tmp_path / "screenshots" / "42"
+    shot_dir.mkdir(parents=True)
+    (shot_dir / "https-example-com.png").write_bytes(b"")
+    (shot_dir / "https-api-example-com.jpg").write_bytes(b"")
+    (shot_dir / "notes.txt").write_bytes(b"")  # excluded
+
+    paths = queries.get_target_screenshot_paths(42, str(tmp_path))
+
+    assert len(paths) == 2
+    assert all(p.endswith(".png") or p.endswith(".jpg") for p in paths)
+
+
+def test_get_target_screenshot_paths_returns_empty_when_dir_missing(tmp_path: Path) -> None:
+    paths = queries.get_target_screenshot_paths(99, str(tmp_path))
+
+    assert paths == []

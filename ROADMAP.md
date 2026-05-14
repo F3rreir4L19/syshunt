@@ -93,29 +93,29 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 *Objetivo: pipeline de recon completo e recursivo*
 
 ### Novos Wrappers
-- [ ] `tools/amass_wrapper.py` — passive mode, com tests
-- [ ] `tools/nmap_wrapper.py` — top-1000 ports, com tests
-- [ ] `tools/katana_wrapper.py` — crawler, com tests
-- [ ] `tools/gau_wrapper.py` — historical URLs, com tests
-- [ ] `tools/gowitness_wrapper.py` — screenshots, com tests
+- [x] `tools/amass_wrapper.py` — passive mode, com tests
+- [x] `tools/nmap_wrapper.py` — top-1000 ports, com tests
+- [x] `tools/katana_wrapper.py` — crawler, com tests
+- [x] `tools/gau_wrapper.py` — historical URLs, com tests
+- [x] `tools/gowitness_wrapper.py` — screenshots, com tests
 
 ### Recon Recursivo
-- [ ] `core/recon/recursive.py` — orquestrador com controle de profundidade
-- [ ] Tracking de domínios processados (evitar loops)
-- [ ] Deduplicação de subdomínios cross-tool
-- [ ] Testes do orquestrador recursivo
+- [x] `core/recon/recursive.py` — orquestrador com controle de profundidade
+- [x] Tracking de domínios processados (evitar loops)
+- [x] Deduplicação de subdomínios cross-tool
+- [x] Testes do orquestrador recursivo
 
 ### Pipeline Expandido
-- [ ] Adicionar etapas 3-6 no pipeline (port scan, crawl, screenshot, vuln scan)
-- [ ] Configurar concorrência por etapa
-- [ ] State machine de target funcionando corretamente
-- [ ] Re-scan com preservação de histórico
+- [x] Adicionar etapas 3-6 no pipeline (port scan, crawl, screenshot, vuln scan)
+- [x] Configurar concorrência por etapa (não-fatal por item)
+- [x] State machine de target funcionando corretamente
+- [x] Re-scan com preservação de histórico (skip_recon=True)
 
 ### Dashboard — Fase 2
-- [ ] Import CSV de targets
-- [ ] Screenshots visíveis no detalhe do alvo
-- [ ] Página Findings com todos os filtros avançados do SPEC.md
-- [ ] Painel lateral de detalhe do finding
+- [x] Import CSV de targets
+- [x] Screenshots visíveis no detalhe do alvo
+- [x] Página Findings com todos os filtros avançados do SPEC.md
+- [x] Painel lateral de detalhe do finding
 
 ---
 
