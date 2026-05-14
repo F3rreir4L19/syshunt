@@ -188,6 +188,35 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 
 ---
 
+
+## FASE 3.5 — CORREÇÕES E HARDENING DA FASE 3
+*Objetivo: corrigir bugs críticos da Fase 3 antes de implementar monitoramento*
+
+### Correções Críticas
+- [ ] `AIClassifier` e providers recebem API key como parâmetro direto em vez de ler `os.environ`; `get_provider(session)` aceita session e lê key do banco sem mutar env vars
+- [ ] `run_dnsx_filter`: capturar `FileNotFoundError` dentro da task e retornar skip silencioso em vez de propagar exceção que abortaria a Canvas chain
+- [ ] `classify_finding`: garantir que `finding.ai_report_draft` é atualizado quando `FindingScore.ai_report_draft` está presente
+- [ ] `run_ai_analysis`: adicionar `force_reanalyze: bool = False`; quando True, pular lookup de cache Redis antes de chamar a IA
+- [ ] Dashboard botão "Re-analyze with AI": passar `force_reanalyze=True` para `run_ai_analysis.apply_async`
+- [ ] `set_setting`: usar upsert explícito (`INSERT ... ON CONFLICT DO UPDATE` no PostgreSQL, `session.merge()` no SQLAlchemy) em vez de `session.add()`
+
+### Modelo de Dados
+- [ ] `Target.auto_analyze` (Boolean, default True): campo no model + migration; campo no formulário "Add Target" no dashboard
+- [ ] `run_nuclei_scan`: consultar `target.auto_analyze` antes de disparar `run_ai_analysis`; se False, transitar diretamente para `recon_done` sem análise
+- [ ] `run_ai_analysis`: adicionar `ai_call_delay_seconds` configurável via `get_setting`; aplicar `time.sleep(delay)` entre cada chamada de IA
+
+### Qualidade e Segurança
+- [ ] `template_generator`: usar `yaml.safe_load()` + validar campos obrigatórios nuclei (`id`, `info.name`, `info.severity`, ao menos um de `requests`/`http`/`network`) antes de salvar; levantar `ValueError` com mensagem descritiva se inválido
+- [ ] `pyproject.toml`: adicionar `openai` como dependência opcional (`[openai]`); tratar `ImportError` no `OpenAICompatibleProvider.complete()` com mensagem clara
+- [ ] `Dockerfile.worker`: instalar `dnsx` via `go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest`; instalar `chromium-driver` via apt; rodar `nuclei -update-templates` no build
+- [ ] Testes: `run_ai_analysis` com `force_reanalyze=True` ignora cache; `run_ai_analysis` com `auto_analyze=False` no target não é disparado; `set_setting` com key existente não levanta IntegrityError; `run_dnsx_filter` com dnsx não instalado não aborta pipeline
+
+### Settings Page
+- [ ] Adicionar campo "AI call delay (seconds)" na seção AI Provider (number input, min=0, max=10, default=1)
+- [ ] Adicionar campo "Auto-analyze new targets" (checkbox, default True) como setting global que pré-preenche o campo `auto_analyze` em novos targets
+
+
+
 ## FASE 4 — MONITORAMENTO DE PLATAFORMAS
 *Objetivo: detectar novos programas automaticamente*
 

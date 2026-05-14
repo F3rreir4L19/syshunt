@@ -17,6 +17,7 @@
   - `program_id`: ID do programa na plataforma (para tracking)
   - `recon_depth`: profundidade de enumeração recursiva (1-3, default: 2)
   - `auto_analyze`: se deve rodar análise IA automaticamente após recon (default: true)
+- `auto_analyze`: se deve rodar análise IA automaticamente após recon (default: configurável via Settings; se não configurado globalmente, default = true)
 
 ### 1.2 Injeção por CSV
 Formato esperado do CSV:
@@ -361,6 +362,29 @@ URL: https://api.example.com/users?id=1
 - Rate limiting nas chamadas à Claude API para evitar custos inesperados
 
 ---
+
+
+### 7.1 Deployment
+
+**Modo notebook (uso ocasional):**
+- Executar `make up` para subir PostgreSQL e Redis via Docker
+- Executar `make worker` e `make dashboard` em terminais separados
+- Adequado para rodar recon manual em targets específicos
+
+**Modo VPS (uso contínuo e monitoramento):**
+- Executar `make up-all` para subir todos os serviços via Docker Compose
+- Worker com `concurrency=4` adequado para VPS 2 vCPU / 4GB RAM
+- Configurar `OUTPUT_DIR` como volume persistente fora do container
+- Flower disponível em `:5555` para monitoramento de filas
+- Recomendado para monitoramento contínuo de plataformas (Fase 4)
+
+**Pré-requisitos para pipeline completo:**
+- `dnsx` instalado no worker (go install)
+- `chromium` instalado no worker (gowitness depende)
+- Templates nuclei atualizados (`nuclei -update-templates`)
+- Sem esses pré-requisitos, etapas correspondentes falham silenciosamente (não-fatal)
+
+
 
 ## 8. MÉTRICAS E HISTÓRICO
 
