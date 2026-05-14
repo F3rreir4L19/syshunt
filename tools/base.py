@@ -27,6 +27,9 @@ class ToolOptions:
     timeout: int = 120
     output_path: Path | None = None
     extra_args: list[str] = field(default_factory=list)
+    # screenshot_dir is used by GoWitnessWrapper as the --screenshot-path argument;
+    # output_path remains the audit-log file path used by the base class.
+    screenshot_dir: Path | None = None
 
 
 class ToolWrapper(ABC):
