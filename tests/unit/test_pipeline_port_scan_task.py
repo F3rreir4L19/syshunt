@@ -117,3 +117,48 @@ def test_run_port_scan_raises_when_all_fail(monkeypatch) -> None:
         assert False, "should have raised"
     except RuntimeError as exc:
         assert "nmap failed" in str(exc)
+
+
+def test_run_port_scan_skips_out_of_scope_hosts(monkeypatch) -> None:
+    """Hosts in scope_excludes are not port-scanned."""
+    sf = _session_factory()
+    monkeypatch.setattr(tasks, "SessionLocal", sf)
+    monkeypatch.setattr(tasks, "NmapWrapper", FakeNmapWrapper)
+
+    with sf() as session:
+        target = Target(
+            domain="example.com",
+            scope_includes=["example.com"],
+            scope_excludes=["staging.example.com"],
+        )
+        session.add(target)
+        session.flush()
+        session.add_all(
+            [
+                ReconResult(
+                    target_id=target.id,
+                    tool="httpx",
+                    result_type="http_service",
+                    data={"url": "https://api.example.com", "host": "api.example.com"},
+                ),
+                ReconResult(
+                    target_id=target.id,
+                    tool="httpx",
+                    result_type="http_service",
+                    data={"url": "https://staging.example.com", "host": "staging.example.com"},
+                ),
+            ]
+        )
+        session.commit()
+        target_id = target.id
+
+    result = tasks.run_port_scan(target_id)
+
+    with sf() as session:
+        rows = session.query(ReconResult).filter(
+            ReconResult.target_id == target_id,
+            ReconResult.tool == "nmap",
+        ).all()
+
+    assert result["created"] == 1
+    assert rows[0].data["hostname"] == "api.example.com"

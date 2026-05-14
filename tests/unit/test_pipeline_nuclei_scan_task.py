@@ -171,3 +171,47 @@ def test_run_nuclei_scan_continues_on_partial_failure(monkeypatch) -> None:
 
     assert summary["created"] == 1
     assert finding.url == "https://good.example.com"
+
+
+def test_run_nuclei_scan_skips_out_of_scope_urls(monkeypatch) -> None:
+    """URLs whose hostname is in scope_excludes are not scanned."""
+    session_factory = build_session_factory()
+    monkeypatch.setattr(tasks, "SessionLocal", session_factory)
+    monkeypatch.setattr(tasks, "NucleiWrapper", FakeNucleiWrapper)
+
+    with session_factory() as session:
+        target = Target(
+            domain="example.com",
+            scope_includes=["example.com"],
+            scope_excludes=["staging.example.com"],
+        )
+        session.add(target)
+        session.flush()
+        session.add_all(
+            [
+                ReconResult(
+                    target_id=target.id,
+                    tool="httpx",
+                    result_type="http_service",
+                    data={"url": "https://api.example.com", "status_code": 200},
+                ),
+                ReconResult(
+                    target_id=target.id,
+                    tool="httpx",
+                    result_type="http_service",
+                    data={"url": "https://staging.example.com", "status_code": 200},
+                ),
+            ]
+        )
+        session.commit()
+        target_id = target.id
+
+    summary = tasks.run_nuclei_scan(target_id)
+
+    with session_factory() as session:
+        findings = session.query(Finding).filter_by(target_id=target_id).all()
+
+    # Only api.example.com scanned (staging excluded)
+    assert summary["created"] == 1
+    assert len(findings) == 1
+    assert findings[0].url == "https://api.example.com"

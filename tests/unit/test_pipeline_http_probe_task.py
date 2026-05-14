@@ -181,3 +181,49 @@ def test_run_http_probe_continues_on_partial_failure(monkeypatch) -> None:
 
     assert summary["created"] == 1
     assert results[0].data["url"] == "https://good.example.com"
+
+
+def test_run_http_probe_skips_out_of_scope_subdomains(monkeypatch) -> None:
+    """Subdomains in scope_excludes are not probed."""
+    session_factory = build_session_factory()
+    monkeypatch.setattr(tasks, "SessionLocal", session_factory)
+    monkeypatch.setattr(tasks, "HttpxWrapper", FakeHttpxWrapper)
+
+    with session_factory() as session:
+        target = Target(
+            domain="example.com",
+            scope_includes=["example.com"],
+            scope_excludes=["staging.example.com"],
+        )
+        session.add(target)
+        session.flush()
+        session.add_all(
+            [
+                ReconResult(
+                    target_id=target.id,
+                    tool="subfinder",
+                    result_type="subdomain",
+                    data={"value": "api.example.com"},
+                ),
+                ReconResult(
+                    target_id=target.id,
+                    tool="subfinder",
+                    result_type="subdomain",
+                    data={"value": "staging.example.com"},
+                ),
+            ]
+        )
+        session.commit()
+        target_id = target.id
+
+    summary = tasks.run_http_probe(target_id)
+
+    with session_factory() as session:
+        results = (
+            session.query(ReconResult)
+            .filter_by(tool="httpx", result_type="http_service")
+            .all()
+        )
+
+    assert summary["created"] == 1
+    assert results[0].data["url"] == "https://api.example.com"

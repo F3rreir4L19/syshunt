@@ -12,6 +12,7 @@ from celery import Celery, chain
 from core.db import queries
 from core.db.models import Finding, ReconResult, Target
 from core.db.session import SessionLocal
+from tools.dnsx_wrapper import DnsxWrapper
 from tools.gau_wrapper import GauWrapper
 from tools.gowitness_wrapper import GoWitnessWrapper
 from tools.httpx_wrapper import HttpxWrapper
@@ -38,6 +39,13 @@ def should_run_tasks_eagerly() -> bool:
 
 def _output_dir() -> Path:
     return Path(os.getenv("OUTPUT_DIR", "/tmp/syshunt"))
+
+
+def _hostname_from_item(item: str) -> str:
+    """Extract hostname from a URL or return the item if it's already a domain."""
+    if item.startswith(("http://", "https://")):
+        return urlparse(item).hostname or item
+    return item
 
 
 celery_app = Celery(
@@ -111,6 +119,11 @@ def run_http_probe(target_id: int) -> dict[str, int | str]:
         data_items: list[dict[str, Any]] = []
 
         for probe_target in probe_targets:
+            if not queries.check_in_scope(
+                probe_target, target.scope_includes, target.scope_excludes
+            ):
+                log.debug("out_of_scope", item=probe_target)
+                continue
             probe_result = HttpxWrapper().run(probe_target)
             if not probe_result.success:
                 log.warning(
@@ -175,6 +188,11 @@ def run_port_scan(target_id: int) -> dict[str, int | str]:
         data_items: list[dict[str, Any]] = []
 
         for host in hosts:
+            if not queries.check_in_scope(
+                host, target.scope_includes, target.scope_excludes
+            ):
+                log.debug("out_of_scope", item=host)
+                continue
             scan_result = NmapWrapper().run(host)
             if not scan_result.success:
                 log.warning("port_scan_item_failed", host=host, error=scan_result.error)
@@ -230,6 +248,12 @@ def run_web_crawl(target_id: int) -> dict[str, int | str]:
         url_to_source: dict[str, str] = {}
 
         for url in crawl_targets:
+            host = _hostname_from_item(url)
+            if not queries.check_in_scope(
+                host, target.scope_includes, target.scope_excludes
+            ):
+                log.debug("out_of_scope", item=url)
+                continue
             for wrapper_cls in (KatanaWrapper, GauWrapper):
                 wrapper = wrapper_cls()
                 result = wrapper.run(url)
@@ -373,6 +397,12 @@ def run_nuclei_scan(target_id: int) -> dict[str, int | str]:
         finding_data_items: list[dict[str, Any]] = []
 
         for scan_target in scan_targets:
+            host = _hostname_from_item(scan_target)
+            if not queries.check_in_scope(
+                host, target.scope_includes, target.scope_excludes
+            ):
+                log.debug("out_of_scope", item=scan_target)
+                continue
             scan_result = NucleiWrapper().run(scan_target)
             if not scan_result.success:
                 log.warning(
@@ -411,6 +441,79 @@ def run_nuclei_scan(target_id: int) -> dict[str, int | str]:
     }
 
 
+@celery_app.task(name="core.pipeline.run_dnsx_filter")
+def run_dnsx_filter(target_id: int) -> dict[str, int | str]:
+    """Filter subdomains by DNS resolution using dnsx.
+
+    Non-fatal: if dnsx is not installed or fails, logs a warning and returns
+    without modifying the stored subdomains. Subdomains that do not resolve are
+    superseded so subsequent pipeline steps skip them.
+    """
+    log = structlog.get_logger().bind(target_id=target_id, tool="dnsx")
+    with SessionLocal() as session:
+        target = session.get(Target, target_id)
+        if target is None:
+            raise ValueError(f"Target {target_id} not found")
+
+        active_subdomain_results = (
+            session.query(ReconResult)
+            .filter(
+                ReconResult.target_id == target.id,
+                ReconResult.result_type == "subdomain",
+                ReconResult.superseded_by.is_(None),
+            )
+            .all()
+        )
+
+        if not active_subdomain_results:
+            log.info("dnsx_filter_skipped", reason="no_active_subdomains")
+            return {"target_id": target_id, "tool": "dnsx", "filtered": 0, "kept": 0}
+
+        all_domains = [
+            r.data["value"]
+            for r in active_subdomain_results
+            if r.data.get("value")
+        ]
+        if not all_domains:
+            return {"target_id": target_id, "tool": "dnsx", "filtered": 0, "kept": 0}
+
+        result = DnsxWrapper().run("\n".join(all_domains))
+        if not result.success:
+            log.warning("dnsx_filter_failed", error=result.error)
+            return {
+                "target_id": target_id,
+                "tool": "dnsx",
+                "filtered": 0,
+                "kept": len(all_domains),
+                "skipped": True,
+            }
+
+        resolved_set = {h.lower() for h in result.parsed_data}
+
+        # Create a marker record so non-resolving results can reference it
+        marker = ReconResult(
+            target_id=target.id,
+            tool="dnsx",
+            result_type="dns_filter",
+            data={"resolved_count": len(resolved_set)},
+        )
+        session.add(marker)
+        session.flush()
+
+        filtered = 0
+        for sub_result in active_subdomain_results:
+            domain = (sub_result.data.get("value") or "").lower()
+            if domain and domain not in resolved_set:
+                sub_result.superseded_by = marker.id
+                filtered += 1
+
+        session.commit()
+
+    kept = len(all_domains) - filtered
+    log.info("dnsx_filter_completed", filtered=filtered, kept=kept)
+    return {"target_id": target_id, "tool": "dnsx", "filtered": filtered, "kept": kept}
+
+
 @celery_app.task(name="core.pipeline.run_full_pipeline")
 def run_full_pipeline(target_id: int, skip_recon: bool = False) -> dict[str, int | str]:
     """Start the full recon pipeline for a target.
@@ -436,6 +539,7 @@ def run_full_pipeline(target_id: int, skip_recon: bool = False) -> dict[str, int
     else:
         result = chain(
             run_subdomain_enum.si(target_id),
+            run_dnsx_filter.si(target_id),
             run_http_probe.si(target_id),
             run_port_scan.si(target_id),
             run_web_crawl.si(target_id),

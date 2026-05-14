@@ -102,3 +102,66 @@ def test_run_web_crawl_falls_back_to_https_root(monkeypatch) -> None:
     result = tasks.run_web_crawl(target_id)
 
     assert result["created"] > 0
+
+
+def test_run_web_crawl_skips_out_of_scope_urls(monkeypatch) -> None:
+    """URLs whose hostname is in scope_excludes are not crawled."""
+
+    class FakeKatanaForScope:
+        name = "katana"
+
+        def run(self, target: str) -> FakeToolResult:
+            return FakeToolResult(
+                success=True,
+                parsed_data=[f"{target}/page"],
+            )
+
+    class FakeGauEmpty:
+        name = "gau"
+
+        def run(self, target: str) -> FakeToolResult:
+            return FakeToolResult(success=True, parsed_data=[])
+
+    sf = _session_factory()
+    monkeypatch.setattr(tasks, "SessionLocal", sf)
+    monkeypatch.setattr(tasks, "KatanaWrapper", FakeKatanaForScope)
+    monkeypatch.setattr(tasks, "GauWrapper", FakeGauEmpty)
+
+    with sf() as session:
+        target = Target(
+            domain="example.com",
+            scope_includes=["example.com"],
+            scope_excludes=["staging.example.com"],
+        )
+        session.add(target)
+        session.flush()
+        session.add_all(
+            [
+                ReconResult(
+                    target_id=target.id,
+                    tool="httpx",
+                    result_type="http_service",
+                    data={"url": "https://api.example.com"},
+                ),
+                ReconResult(
+                    target_id=target.id,
+                    tool="httpx",
+                    result_type="http_service",
+                    data={"url": "https://staging.example.com"},
+                ),
+            ]
+        )
+        session.commit()
+        target_id = target.id
+
+    result = tasks.run_web_crawl(target_id)
+
+    with sf() as session:
+        rows = session.query(ReconResult).filter(
+            ReconResult.target_id == target_id,
+            ReconResult.tool == "webcrawl",
+        ).all()
+
+    # staging.example.com skipped; only api.example.com crawled → 1 URL
+    assert result["created"] == 1
+    assert rows[0].data["url"] == "https://api.example.com/page"
