@@ -54,7 +54,7 @@ def test_run_subdomain_enum_persists_recon_results(monkeypatch) -> None:
         "created": 2,
     }
     assert saved_target is not None
-    assert saved_target.status == "subdomain_enum_completed"
+    assert saved_target.status == "pending"  # only full pipeline changes status
     assert [result.data["value"] for result in results] == [
         "api.example.com",
         "www.example.com",

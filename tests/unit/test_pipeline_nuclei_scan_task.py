@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Any
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -29,6 +30,29 @@ class FakeNucleiWrapper:
                         "severity": "medium",
                         "description": "Administrative panel exposed.",
                     },
+                }
+            ],
+        )
+
+
+class FakeNucleiWrapperAlwaysFails:
+    def run(self, target: str) -> FakeToolResult:
+        return FakeToolResult(success=False, parsed_data=[], error="nuclei crashed")
+
+
+class FakeNucleiWrapperPartialFailure:
+    """Succeeds for 'https://good.example.com', fails for 'https://bad.example.com'."""
+
+    def run(self, target: str) -> FakeToolResult:
+        if "bad" in target:
+            return FakeToolResult(success=False, parsed_data=[], error="timeout")
+        return FakeToolResult(
+            success=True,
+            parsed_data=[
+                {
+                    "template-id": "exposed-panel",
+                    "matched-at": target,
+                    "info": {"name": "Exposed panel", "severity": "medium"},
                 }
             ],
         )
@@ -73,7 +97,8 @@ def test_run_nuclei_scan_persists_recon_results_and_findings(monkeypatch) -> Non
         "created": 1,
     }
     assert saved_target is not None
-    assert saved_target.status == "nuclei_scan_completed"
+    assert saved_target.status == "recon_done"
+    assert saved_target.last_recon_at is not None
     assert recon_result.data["template-id"] == "exposed-panel"
     assert finding.title == "Exposed panel"
     assert finding.severity == "medium"
@@ -92,3 +117,57 @@ def test_finding_from_nuclei_result_uses_safe_defaults() -> None:
     assert finding.title == "nuclei"
     assert finding.severity == "info"
     assert finding.raw_evidence == {"raw": "unparsed finding"}
+
+
+def test_run_nuclei_scan_raises_only_if_all_targets_fail(monkeypatch) -> None:
+    """All scans fail → task raises RuntimeError."""
+    session_factory = build_session_factory()
+    monkeypatch.setattr(tasks, "SessionLocal", session_factory)
+    monkeypatch.setattr(tasks, "NucleiWrapper", FakeNucleiWrapperAlwaysFails)
+
+    with session_factory() as session:
+        target = Target(domain="example.com")
+        session.add(target)
+        session.commit()
+        target_id = target.id
+
+    with pytest.raises(RuntimeError, match="nuclei failed for all targets"):
+        tasks.run_nuclei_scan(target_id)
+
+
+def test_run_nuclei_scan_continues_on_partial_failure(monkeypatch) -> None:
+    """One scan fails but another succeeds → task succeeds with partial results."""
+    session_factory = build_session_factory()
+    monkeypatch.setattr(tasks, "SessionLocal", session_factory)
+    monkeypatch.setattr(tasks, "NucleiWrapper", FakeNucleiWrapperPartialFailure)
+
+    with session_factory() as session:
+        target = Target(domain="example.com")
+        session.add(target)
+        session.flush()
+        session.add_all(
+            [
+                ReconResult(
+                    target_id=target.id,
+                    tool="httpx",
+                    result_type="http_service",
+                    data={"url": "https://bad.example.com", "status_code": 200},
+                ),
+                ReconResult(
+                    target_id=target.id,
+                    tool="httpx",
+                    result_type="http_service",
+                    data={"url": "https://good.example.com", "status_code": 200},
+                ),
+            ]
+        )
+        session.commit()
+        target_id = target.id
+
+    summary = tasks.run_nuclei_scan(target_id)
+
+    with session_factory() as session:
+        finding = session.query(Finding).one()
+
+    assert summary["created"] == 1
+    assert finding.url == "https://good.example.com"

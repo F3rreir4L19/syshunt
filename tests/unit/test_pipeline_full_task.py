@@ -77,6 +77,6 @@ def test_run_full_pipeline_executes_chain_in_eager_mode(monkeypatch) -> None:
     assert summary["status"] == "scheduled"
     assert summary["workflow_id"]
     assert saved_target is not None
-    assert saved_target.status == "nuclei_scan_completed"
+    assert saved_target.status == "recon_done"
     assert recon_results == 3
     assert findings == 1

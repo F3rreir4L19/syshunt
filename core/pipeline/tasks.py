@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import os
-
-from celery import Celery, chain
-
+from datetime import UTC, datetime
 from typing import Any
 
+import structlog
+from celery import Celery
+
+from core.db import queries
 from core.db.models import Finding, ReconResult, Target
 from core.db.session import SessionLocal
 from tools.httpx_wrapper import HttpxWrapper
@@ -45,6 +47,7 @@ celery_app.conf.update(
 
 @celery_app.task(name="core.pipeline.run_subdomain_enum")
 def run_subdomain_enum(target_id: int) -> dict[str, int | str]:
+    log = structlog.get_logger().bind(target_id=target_id, tool="subfinder")
     with SessionLocal() as session:
         target = session.get(Target, target_id)
         if target is None:
@@ -52,130 +55,164 @@ def run_subdomain_enum(target_id: int) -> dict[str, int | str]:
 
         result = SubfinderWrapper().run(target.domain)
         if not result.success:
-            target.status = "subdomain_enum_failed"
-            session.commit()
+            log.warning("subdomain_enum_failed", error=result.error)
             raise RuntimeError(result.error or "subfinder failed")
 
-        for subdomain in result.parsed_data:
-            session.add(
-                ReconResult(
-                    target_id=target.id,
-                    tool="subfinder",
-                    result_type="subdomain",
-                    data={"value": subdomain},
-                )
-            )
-
-        target.status = "subdomain_enum_completed"
+        inserted = queries.insert_recon_results_with_dedup(
+            session,
+            target_id=target.id,
+            tool="subfinder",
+            result_type="subdomain",
+            data_items=[{"value": s} for s in result.parsed_data],
+        )
         session.commit()
 
-        return {
-            "target_id": target.id,
-            "tool": "subfinder",
-            "created": len(result.parsed_data),
-        }
+    log.info("subdomain_enum_completed", created=len(inserted))
+    return {
+        "target_id": target_id,
+        "tool": "subfinder",
+        "created": len(inserted),
+    }
 
 
 @celery_app.task(name="core.pipeline.run_http_probe")
 def run_http_probe(target_id: int) -> dict[str, int | str]:
+    log = structlog.get_logger().bind(target_id=target_id, tool="httpx")
     with SessionLocal() as session:
         target = session.get(Target, target_id)
         if target is None:
             raise ValueError(f"Target {target_id} not found")
 
         subdomains = [
-            result.data["value"]
-            for result in session.query(ReconResult)
-            .filter_by(target_id=target.id, tool="subfinder", result_type="subdomain")
+            r.data["value"]
+            for r in session.query(ReconResult)
+            .filter(
+                ReconResult.target_id == target.id,
+                ReconResult.tool == "subfinder",
+                ReconResult.result_type == "subdomain",
+                ReconResult.superseded_by.is_(None),
+            )
             .all()
-            if "value" in result.data
+            if "value" in r.data
         ]
         probe_targets = subdomains or [target.domain]
-        created = 0
+
+        errors: list[str] = []
+        data_items: list[dict[str, Any]] = []
 
         for probe_target in probe_targets:
-            result = HttpxWrapper().run(probe_target)
-            if not result.success:
-                target.status = "http_probe_failed"
-                session.commit()
-                raise RuntimeError(result.error or "httpx failed")
-
-            for service in result.parsed_data:
-                session.add(
-                    ReconResult(
-                        target_id=target.id,
-                        tool="httpx",
-                        result_type="http_service",
-                        data=service,
-                    )
+            probe_result = HttpxWrapper().run(probe_target)
+            if not probe_result.success:
+                log.warning(
+                    "http_probe_item_failed",
+                    probe_target=probe_target,
+                    error=probe_result.error,
                 )
-                created += 1
+                errors.append(f"{probe_target}: {probe_result.error}")
+                continue
+            data_items.extend(probe_result.parsed_data)
 
-        target.status = "http_probe_completed"
+        if not data_items and errors:
+            raise RuntimeError(
+                f"httpx failed for all targets: {'; '.join(errors)}"
+            )
+
+        inserted = queries.insert_recon_results_with_dedup(
+            session,
+            target_id=target.id,
+            tool="httpx",
+            result_type="http_service",
+            data_items=data_items,
+        )
         session.commit()
 
-        return {
-            "target_id": target.id,
-            "tool": "httpx",
-            "created": created,
-        }
+    log.info("http_probe_completed", created=len(inserted), errors=len(errors))
+    return {
+        "target_id": target_id,
+        "tool": "httpx",
+        "created": len(inserted),
+    }
 
 
 @celery_app.task(name="core.pipeline.run_nuclei_scan")
 def run_nuclei_scan(target_id: int) -> dict[str, int | str]:
+    log = structlog.get_logger().bind(target_id=target_id, tool="nuclei")
     with SessionLocal() as session:
         target = session.get(Target, target_id)
         if target is None:
             raise ValueError(f"Target {target_id} not found")
 
         urls = [
-            result.data["url"]
-            for result in session.query(ReconResult)
-            .filter_by(target_id=target.id, tool="httpx", result_type="http_service")
+            r.data["url"]
+            for r in session.query(ReconResult)
+            .filter(
+                ReconResult.target_id == target.id,
+                ReconResult.tool == "httpx",
+                ReconResult.result_type == "http_service",
+                ReconResult.superseded_by.is_(None),
+            )
             .all()
-            if "url" in result.data
+            if "url" in r.data
         ]
         scan_targets = urls or [target.domain]
-        created = 0
+
+        errors: list[str] = []
+        finding_data_items: list[dict[str, Any]] = []
 
         for scan_target in scan_targets:
-            result = NucleiWrapper().run(scan_target)
-            if not result.success:
-                target.status = "nuclei_scan_failed"
-                session.commit()
-                raise RuntimeError(result.error or "nuclei failed")
-
-            for finding_data in result.parsed_data:
-                session.add(
-                    ReconResult(
-                        target_id=target.id,
-                        tool="nuclei",
-                        result_type="finding",
-                        data=finding_data,
-                    )
+            scan_result = NucleiWrapper().run(scan_target)
+            if not scan_result.success:
+                log.warning(
+                    "nuclei_scan_item_failed",
+                    scan_target=scan_target,
+                    error=scan_result.error,
                 )
-                session.add(_finding_from_nuclei_result(target.id, finding_data))
-                created += 1
+                errors.append(f"{scan_target}: {scan_result.error}")
+                continue
+            finding_data_items.extend(scan_result.parsed_data)
 
-        target.status = "nuclei_scan_completed"
+        if not finding_data_items and errors:
+            raise RuntimeError(
+                f"nuclei failed for all targets: {'; '.join(errors)}"
+            )
+
+        inserted = queries.insert_recon_results_with_dedup(
+            session,
+            target_id=target.id,
+            tool="nuclei",
+            result_type="finding",
+            data_items=finding_data_items,
+        )
+        for finding_data in inserted:
+            session.add(_finding_from_nuclei_result(target.id, finding_data))
+
+        target.status = "recon_done"
+        target.last_recon_at = datetime.now(UTC)
         session.commit()
 
-        return {
-            "target_id": target.id,
-            "tool": "nuclei",
-            "created": created,
-        }
+    log.info("nuclei_scan_completed", created=len(inserted), errors=len(errors))
+    return {
+        "target_id": target_id,
+        "tool": "nuclei",
+        "created": len(inserted),
+    }
 
 
 @celery_app.task(name="core.pipeline.run_full_pipeline")
 def run_full_pipeline(target_id: int) -> dict[str, int | str]:
-    workflow = chain(
-        run_subdomain_enum.si(target_id),
-        run_http_probe.si(target_id),
-        run_nuclei_scan.si(target_id),
-    )
-    result = workflow.apply_async()
+    log = structlog.get_logger().bind(target_id=target_id)
+    with SessionLocal() as session:
+        target = session.get(Target, target_id)
+        if target is None:
+            raise ValueError(f"Target {target_id} not found")
+        target.status = "recon_running"
+        session.commit()
 
+    log.info("pipeline_started")
+    result = run_subdomain_enum.apply_async(
+        args=[target_id],
+        link=run_http_probe.si(target_id).set(link=run_nuclei_scan.si(target_id)),
+    )
     return {
         "target_id": target_id,
         "workflow_id": result.id or "",
