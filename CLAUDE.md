@@ -133,6 +133,10 @@ bughunter/
 
 ### Celery Tasks
 - Tasks **idempotentes** sempre que possível
+- Pipeline chain via `link=` no `apply_async()` da task anterior, nunca `chain().apply_async()` dentro de uma task
+- Falhas de ferramenta em loops são não-fatais: coletar erros, logar, continuar; só falhar a task se zero resultados válidos
+- Deduplicação obrigatória antes de qualquer `session.add()` de ReconResult: checar existência por `(target_id, tool, result_type, data hash)` antes de inserir
+- Re-scan sempre marca resultados anteriores com `superseded_by` antes de inserir novos
 - Tasks longas divididas em sub-tasks encadeadas
 - Retry com backoff exponencial em falhas de rede
 - Resultados de recon nunca deletados, apenas marcados como superseded
@@ -144,6 +148,7 @@ bughunter/
 - `ToolResult` sempre tem: `success`, `raw_output`, `parsed_data`, `error`
 - Timeout configurável por ferramenta
 - Output salvo em disco antes de parsear (auditoria)
+- `ToolResult` tem `raw_stdout` e `raw_stderr` separados; `raw_output` é mantido apenas para compatibilidade; `parse_output` opera sempre sobre `raw_stdout`
 
 ---
 
@@ -333,3 +338,5 @@ MAX_RECON_DEPTH=2
 | 2026-05-13 | Celery em vez de asyncio puro | Persistência de tasks, retry automático, visibilidade via Flower |
 | 2026-05-13 | Wrappers subprocess em vez de libs Python | Ferramentas de segurança têm melhor suporte em CLI; easier to update |
 | 2026-05-13 | Claude API para análise, não modelo local | Qualidade de análise contextual muito superior; custo aceitável por volume |
+| 2026-05-13 | Estados internos de pipeline (`subdomain_enum_completed` etc) são opacos; o campo `status` do Target expõe apenas os estados da spec (`pending`, `recon_running`, `recon_done`, `ready_for_review`, `archived`) | Consistência entre spec, dashboard e filtros |
+| 2026-05-13 | Lógica de queries (`list_targets`, `list_findings`, `create_target`) em `core/db/queries.py`, não em `dashboard/app.py` | Reutilização entre páginas do dashboard na Fase 2+ |

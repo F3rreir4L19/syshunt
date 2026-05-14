@@ -69,6 +69,26 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 
 ---
 
+
+## FASE 1.5 — CORREÇÕES ESTRUTURAIS
+*Objetivo: corrigir debt técnico identificado na revisão da Fase 1 antes que a Fase 2 o amplifique*
+
+### Pipeline e Estado
+- [ ] Alinhar `Target.status` com os estados da spec: estados internos de etapa (`subdomain_enum_completed` etc) viram log/evento, não atualizam o campo `status` diretamente; o campo só assume os valores da spec
+- [ ] Refatorar `run_full_pipeline`: usar `link=` no `apply_async()` de cada task para encadear a próxima, em vez de `chain().apply_async()` dentro de uma task
+- [ ] `run_http_probe` e `run_nuclei_scan`: loop tolerante a falhas — coletar erros por item, logar, continuar; só marcar target como falho se zero resultados válidos ao final
+
+### Dados
+- [ ] Separar `raw_stdout` e `raw_stderr` em `ToolResult`; `parse_output` opera só sobre `raw_stdout`
+- [ ] Deduplicação de `ReconResult` antes de inserir: upsert ou check por `(target_id, tool, result_type)` + hash do valor
+- [ ] Implementar `superseded_by` no fluxo de re-scan: marcar resultados anteriores antes de inserir novos
+
+### Organização
+- [ ] Extrair `create_target`, `list_targets`, `list_findings`, `get_pipeline_status` de `dashboard/app.py` para `core/db/queries.py`
+- [ ] `dashboard/app.py` passa a importar de `core/db/queries.py`
+- [ ] Atualizar testes afetados pela refatoração
+
+
 ## FASE 2 — RECON COMPLETO
 *Objetivo: pipeline de recon completo e recursivo*
 

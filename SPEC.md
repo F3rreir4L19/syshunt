@@ -115,6 +115,14 @@ pending → recon_running → recon_done → analysis_running → ready_for_revi
   - Se `recon_depth > 1`: rodar etapas 1-5 nesse subdomínio também
   - Decrementa profundidade a cada nível
   - Evita loops (tracking de domínios já processados na sessão)
+  - Status do target durante todo o pipeline recursivo permanece `recon_running`; só transita para `recon_done` quando todas as profundidades estiverem completas
+
+
+### 2.8 Re-scan e Deduplicação
+- Re-scan marca todos os `ReconResult` anteriores do target com `superseded_by = <novo_recon_result_id>` antes de inserir novos resultados
+- Findings existentes **não** são deletados nem superseded; o re-scan pode gerar findings adicionais, nunca remover os anteriores
+- Deduplicação de subdomínios é feita antes de persistir: se o mesmo valor já existe como `ReconResult` ativo (sem `superseded_by`) para o target, não insere duplicata
+- Falhas individuais de ferramenta durante loop (ex: um subdomínio de 50 dando timeout) são logadas como `structlog.warning` com contexto `{target_id, tool, failed_item}` mas não abortam a task; a task só falha se *todos* os itens falharem
 
 ---
 
