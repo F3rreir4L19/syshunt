@@ -1,17 +1,17 @@
 # ROADMAP.md — Plano de Execução com Codex
 
-> Este arquivo é o plano de trabalho **ordenado por sessão de Codex**.
+> Este arquivo é o plano de trabalho **ordenado por sessão de Claude**.
 > Cada sessão deve começar lendo CLAUDE.md, depois este arquivo,
 > executar a fase atual, atualizar checkboxes e fazer commit.
 
 ---
 
-## COMO TRABALHAR COM O CODEX NESTE PROJETO
+## COMO TRABALHAR COM O CLAUDE NESTE PROJETO
 
 **Prompt de abertura de sessão (copie e adapte):**
 ```
 Leia o CLAUDE.md e o ROADMAP.md do projeto Syshunt.
-Estou na [FASE 2.5 — FUNDAÇÃO DO PROJETO].
+Estou na [FASE 3 — FUNDAÇÃO DO PROJETO].
 Execute as tasks pendentes nessa fase.
 Após cada task: rode os testes, faça commit com mensagem descritiva.
 Atualize os checkboxes no ROADMAP.md ao concluir cada item.
@@ -131,19 +131,19 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 
 ### Correções de Dados e Segurança
 - [x] Validação de domínio por regex em `normalize_domain` e `bulk_create_targets`: rejeitar inputs com caracteres inválidos antes de qualquer operação
-- [ ] Validação de scope em cada task do pipeline: subdomínios fora de `scope_includes` ou em `scope_excludes` não são processados nas etapas seguintes
+- [x] Validação de scope em cada task do pipeline: subdomínios fora de `scope_includes` ou em `scope_excludes` não são processados nas etapas seguintes
 - [x] Hash completo sha256 em `_data_hash` (remover `[:16]`)
 - [x] `run_web_crawl`: adicionar campo `source_tool` nos data_items (`{"url": u, "source_tool": "katana"}`)
 - [x] `run_screenshot`: capturar e armazenar `filename` gerado pelo gowitness no ReconResult data
 
 ### Correções de Dashboard
 - [x] Corrigir `_parse_domains_from_csv`: fallback para lista sem header não deve excluir linhas com vírgula; deve parsear apenas a primeira coluna
-- [ ] Adicionar validação de formato de domínio no formulário "Add Target" antes de submeter
+- [x] Adicionar validação de formato de domínio no formulário "Add Target" antes de submeter
 
 ### Novos Wrappers
 - [x] `tools/dnsx_wrapper.py` — resolução e validação de subdomínios antes do httpx; filtra wildcard e NXDOMAIN
 - [x] `tools/ffuf_wrapper.py` — fuzzing de diretórios e parâmetros em hosts ativos; integrar após web crawl
-- [ ] Integrar `dnsx` entre subdomain enum e http probe no pipeline
+- [x] Integrar `dnsx` entre subdomain enum e http probe no pipeline
 
 ### Fundação do Classificador
 - [x] `core/analysis/provider.py` — abstração `AIProvider` com métodos `complete(prompt) → str` e `is_available() → bool`
@@ -159,31 +159,31 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 *Objetivo: implementar enhancement via IA sobre o classificador heurístico já funcional da Fase 2.5*
 
 ### Integração de Providers
-- [ ] Implementar `AIClassifier` em `core/analysis/classifier_ai.py` usando abstração `AIProvider`
-- [ ] Orquestrador em `core/analysis/classifier.py`: usa `AIClassifier` se provider disponível, senão `BaseClassifier`
-- [ ] Fallback automático: se provider configurado mas retorna erro → logar warning → usar heurístico
-- [ ] Cache de análises: hash do (finding_type + url + evidence_snippet) como chave; TTL configurável
-- [ ] Testes com providers mockados para Anthropic, OpenAI-compatible e Ollama
+- [x] Implementar `AIClassifier` em `core/analysis/classifier_ai.py` usando abstração `AIProvider`
+- [x] Orquestrador em `core/analysis/classifier.py`: usa `AIClassifier` se provider disponível, senão `BaseClassifier`
+- [x] Fallback automático: se provider configurado mas retorna erro → logar warning → usar heurístico
+- [x] Cache de análises: hash do (finding_type + url + evidence_snippet) como chave; TTL configurável
+- [x] Testes com providers mockados para Anthropic, OpenAI-compatible e Ollama
 
 ### Classifier
-- [ ] `core/analysis/classifier.py` — aplica scores + ordena findings
-- [ ] Task Celery: `run_ai_analysis(target_id)`
-- [ ] Integração no pipeline principal (etapa 8)
-- [ ] Trigger manual no dashboard para targets já reconhecidos
-- [ ] `system_settings` table e model: chave/valor para configurações persistidas no banco
-- [ ] `get_setting` / `set_setting` em `core/db/queries.py`
-- [ ] `run_ai_analysis` respeita `ai_analysis_limit` do banco; quando null processa tudo
+- [x] `core/analysis/classifier.py` — aplica scores + ordena findings
+- [x] Task Celery: `run_ai_analysis(target_id)`
+- [x] Integração no pipeline principal (etapa 8)
+- [x] Trigger manual no dashboard para targets já reconhecidos
+- [x] `system_settings` table e model: chave/valor para configurações persistidas no banco
+- [x] `get_setting` / `set_setting` em `core/db/queries.py`
+- [x] `run_ai_analysis` respeita `ai_analysis_limit` do banco; quando null processa tudo
 
 ### Geração de Report Draft
-- [ ] Prompt de geração de report para findings com score ≥ 60
-- [ ] Formato compatível com HackerOne e Bugcrowd
-- [ ] Exibição no dashboard + botão "Copy to clipboard"
+- [x] Prompt de geração de report para findings com score ≥ 60
+- [x] Formato compatível com HackerOne e Bugcrowd
+- [x] Exibição no dashboard + botão "Copy to clipboard"
 
 ### Geração de Templates
-- [ ] `core/analysis/template_generator.py`
-- [ ] Prompt para gerar YAML nuclei a partir de descrição natural
-- [ ] Validação básica do YAML gerado
-- [ ] Salvar em `core/analysis/templates/generated/`
+- [x] `core/analysis/template_generator.py`
+- [x] Prompt para gerar YAML nuclei a partir de descrição natural
+- [x] Validação básica do YAML gerado
+- [x] Salvar em `core/analysis/templates/generated/`
 - [ ] Interface no dashboard: input → gerar → revisar → salvar
 
 ---
@@ -275,4 +275,5 @@ Funcionalidades desejáveis mas não essenciais para v1:
 | Data | Fase | O que foi feito | Pendências |
 |------|------|-----------------|------------|
 | 2026-05-13 | Spec | CLAUDE.md, SPEC.md, docker-compose.yml, ROADMAP.md criados | Começar Fase 1 |
-| 2026-05-13 | 2.5 | Pipeline Canvas chain, urlparse, async recursive recon task, normalize_domain regex, check_in_scope, sha256 completo, source_tool no crawl, filename no screenshot, CSV fix, dnsx/ffuf wrappers, AIProvider, classifier_base, migration findings | Pendente: scope validation no pipeline, dnsx integração, validação no form Add Target |
+| 2026-05-13 | 2.5 | Pipeline Canvas chain, urlparse, async recursive recon task, normalize_domain regex, check_in_scope, sha256 completo, source_tool no crawl, filename no screenshot, CSV fix, dnsx/ffuf wrappers, AIProvider, classifier_base, migration findings | — |
+| 2026-05-13 | 2.5+3 | scope validation em tasks, run_dnsx_filter, form validation, SystemSetting, migration 0003, get_setting/set_setting, AIClassifier, classifier.py com Redis cache, template_generator, run_ai_analysis, settings dashboard, AI badges/expanders, Re-analyze button | Interface dashboard para template generator (Fase 5) |
