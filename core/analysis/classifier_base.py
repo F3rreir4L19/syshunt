@@ -10,6 +10,10 @@ class FindingScore:
     confidence: str
     classifier_used: str
     confidence_note: str
+    ai_reasoning: str | None = None
+    ai_report_draft: str | None = None
+    severity: str | None = None
+    exploitation_difficulty: str | None = None
 
 
 _SEVERITY_POINTS: dict[str, int] = {
