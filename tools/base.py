@@ -11,9 +11,15 @@ from typing import Any
 @dataclass(slots=True)
 class ToolResult:
     success: bool
-    raw_output: str
+    raw_stdout: str
+    raw_stderr: str
     parsed_data: Any
     error: str | None = None
+    # raw_output is kept for backward compatibility; always equals raw_stdout
+    raw_output: str = field(default="", init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self.raw_output = self.raw_stdout
 
 
 @dataclass(slots=True)
@@ -41,37 +47,41 @@ class ToolWrapper(ABC):
         except FileNotFoundError as exc:
             return ToolResult(
                 success=False,
-                raw_output="",
+                raw_stdout="",
+                raw_stderr="",
                 parsed_data=[],
                 error=f"{self.name} executable not found: {exc}",
             )
         except subprocess.TimeoutExpired as exc:
-            raw_output = (exc.stdout or "") + (exc.stderr or "")
-            self._write_output(raw_output, tool_options.output_path)
+            raw_stdout = exc.stdout or ""
+            raw_stderr = exc.stderr or ""
+            self._write_output(raw_stdout, tool_options.output_path)
             return ToolResult(
                 success=False,
-                raw_output=raw_output,
+                raw_stdout=raw_stdout,
+                raw_stderr=raw_stderr,
                 parsed_data=[],
                 error=f"{self.name} timed out after {tool_options.timeout}s",
             )
 
-        raw_output = completed.stdout
-        if completed.stderr:
-            raw_output = f"{raw_output}{completed.stderr}"
-        self._write_output(raw_output, tool_options.output_path)
+        raw_stdout = completed.stdout or ""
+        raw_stderr = completed.stderr or ""
+        self._write_output(raw_stdout, tool_options.output_path)
 
         if completed.returncode != 0:
             return ToolResult(
                 success=False,
-                raw_output=raw_output,
+                raw_stdout=raw_stdout,
+                raw_stderr=raw_stderr,
                 parsed_data=[],
                 error=f"{self.name} exited with code {completed.returncode}",
             )
 
         return ToolResult(
             success=True,
-            raw_output=raw_output,
-            parsed_data=self.parse_output(raw_output),
+            raw_stdout=raw_stdout,
+            raw_stderr=raw_stderr,
+            parsed_data=self.parse_output(raw_stdout),
             error=None,
         )
 

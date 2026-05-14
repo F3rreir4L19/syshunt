@@ -23,7 +23,7 @@ def test_tool_wrapper_runs_command_and_parses_output(tmp_path: Path) -> None:
             args=["echo-tool", "example.com"],
             returncode=0,
             stdout="one\ntwo\n",
-            stderr="",
+            stderr="warning: something",
         )
 
         result = EchoWrapper().run(
@@ -32,9 +32,13 @@ def test_tool_wrapper_runs_command_and_parses_output(tmp_path: Path) -> None:
         )
 
     assert result.success is True
+    assert result.raw_stdout == "one\ntwo\n"
+    assert result.raw_stderr == "warning: something"
+    # raw_output is a backward-compat alias for raw_stdout
     assert result.raw_output == "one\ntwo\n"
     assert result.parsed_data == ["one", "two"]
     assert result.error is None
+    # only stdout is written to disk for audit
     assert output_path.read_text(encoding="utf-8") == "one\ntwo\n"
     run.assert_called_once()
     assert run.call_args.args[0] == ["echo-tool", "example.com", "--json"]
@@ -53,5 +57,8 @@ def test_tool_wrapper_returns_error_on_nonzero_exit() -> None:
 
     assert result.success is False
     assert result.parsed_data == []
-    assert result.raw_output == "bad target"
+    assert result.raw_stdout == ""
+    assert result.raw_stderr == "bad target"
+    # raw_output alias still equals raw_stdout
+    assert result.raw_output == ""
     assert result.error == "echo-tool exited with code 2"
