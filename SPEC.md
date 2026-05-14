@@ -128,6 +128,56 @@ pending → recon_running → recon_done → analysis_running → ready_for_revi
 
 ## 3. ANÁLISE POR IA
 
+### 3.0 Classificação Heurística (Baseline)
+
+O sistema possui um classificador heurístico que opera **sem dependência de IA**,
+sempre disponível como baseline. Quando nenhum provider de IA está configurado ou
+disponível, todos os findings são classificados por este sistema.
+
+**Critérios de score (soma máxima = 80 antes da penalização):**
+
+| Critério | Pontos |
+|----------|--------|
+| Severidade: critical | +40 |
+| Severidade: high | +30 |
+| Severidade: medium | +15 |
+| Severidade: low | +5 |
+| Categoria: cve | +20 |
+| Categoria: exposure | +15 |
+| Categoria: misconfiguration | +10 |
+| Evidência: matched-at presente | +10 |
+| Evidência: request/response diff no raw_evidence | +15 |
+| Contexto URL: /admin, /manage, /console | +8 |
+| Contexto URL: /api, /v1, /v2 | +5 |
+| Contexto URL: staging, dev, test (subdomain) | −10 |
+
+**Penalização por modo heurístico:** score final × 0.8
+
+**Campos preenchidos:**
+- `auto_score`: score calculado (já com penalização)
+- `classifier_used`: `"heuristic"`
+- `confidence`: `"possible"` (teto máximo sem IA)
+- `confidence_note`: string explicando que a classificação é heurística e pode ter alta taxa de falso positivo
+
+### 3.1 Scoring por IA (Enhancement)
+
+Quando um provider de IA está configurado e disponível, o classificador heurístico
+é substituído pela análise contextual via LLM. O score heurístico não é usado como
+input para a IA — a IA recebe os dados brutos e produz seu próprio score.
+
+Providers suportados:
+- **Anthropic Claude** — padrão quando `ANTHROPIC_API_KEY` presente
+- **OpenAI-compatible** — qualquer endpoint compatível (OpenAI, Groq, Together, etc.) via `OPENAI_API_KEY` + `OPENAI_BASE_URL`
+- **Ollama** — modelos locais via `OLLAMA_BASE_URL` + `OLLAMA_MODEL`
+
+Seleção automática: `AI_PROVIDER` env var; se ausente, detecta pelo primeiro API key presente na ordem: Anthropic → OpenAI → Ollama.
+
+Campos adicionais preenchidos pela IA:
+- `classifier_used`: `"ai:anthropic"` | `"ai:openai"` | `"ai:ollama"`  
+- `ai_reasoning`: texto explicando o raciocínio do score
+- `ai_report_draft`: draft de report no formato HackerOne/Bugcrowd (somente para score ≥ 60)
+
+
 ### 3.1 Scoring de Findings
 Para cada finding com status `new`, o sistema chama a Claude API com:
 - Tipo de vulnerabilidade detectada

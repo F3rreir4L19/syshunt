@@ -133,7 +133,8 @@ bughunter/
 
 ### Celery Tasks
 - Tasks **idempotentes** sempre que possível
-- Pipeline chain via `link=` no `apply_async()` da task anterior, nunca `chain().apply_async()` dentro de uma task
+- Pipeline chain usa Celery Canvas `chain()` como objeto e `.apply_async()` na chain completa; não usar `link=` dentro de `.set()` (não é API válida)
+- Recon recursivo dispara sub-tasks Celery assíncronas (`run_recursive_subdomain_enum.apply_async`) em vez de recursão direta; worker não bloqueia
 - Falhas de ferramenta em loops são não-fatais: coletar erros, logar, continuar; só falhar a task se zero resultados válidos
 - Deduplicação obrigatória antes de qualquer `session.add()` de ReconResult: checar existência por `(target_id, tool, result_type, data hash)` antes de inserir
 - Re-scan sempre marca resultados anteriores com `superseded_by` antes de inserir novos
@@ -183,6 +184,39 @@ auto_recon_enabled, last_checked_at, first_seen_at
 ```
 
 ---
+
+
+## SISTEMA DE CLASSIFICAÇÃO DE FINDINGS
+
+O sistema opera em dois modos, selecionados automaticamente:
+
+### Modo Heurístico (sempre disponível)
+- `core/analysis/classifier_base.py` — scoring por regras determinísticas
+- Critérios: severidade do template, categoria nuclei, qualidade da evidência, contexto da URL
+- Score resultante penalizado em 20% e confidence marcado como `"heuristic"`
+- `confidence_note` no finding explica as limitações da classificação sem IA
+
+### Modo IA (opcional, requer provider configurado)
+- `core/analysis/classifier_ai.py` — enhancement via LLM
+- Providers suportados: Anthropic Claude (padrão), OpenAI-compatible (qualquer endpoint), Ollama (local)
+- Abstração em `core/analysis/provider.py`: todos os providers expõem `complete(prompt) → str`
+- Se provider configurado mas indisponível: fallback automático para heurístico com log de warning
+- Se IA disponível: score heurístico é substituído pelo score da IA; confidence = "ai:{provider}"
+
+### Campos adicionados ao Finding
+classifier_used: "heuristic" | "ai:anthropic" | "ai:openai" | "ai:ollama"
+confidence_note: str  # explicação das limitações quando heurístico
+ai_reasoning: str | None  # reasoning da IA quando disponível
+ai_report_draft: str | None  # draft de report gerado pela IA
+
+### Variáveis de ambiente para providers
+AI_PROVIDER=anthropic|openai|ollama  # default: anthropic se ANTHROPIC_API_KEY presente
+OPENAI_API_KEY=...
+OPENAI_BASE_URL=...  # para qualquer API OpenAI-compatible
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.2
+
+
 
 ## SCORING DE FINDINGS
 
@@ -348,3 +382,11 @@ MAX_RECON_DEPTH=2
 | 2026-05-13 | `core/recon/recursive.py` usa Redis set `syshunt:recon:{root_target_id}:processed` (TTL 24h) para evitar loops; todos resultados são armazenados sob `root_target_id` sem criar novos Target records para sub-subdomínios | Simplicidade: resultado unificado por alvo raiz; Redis best-effort (falha silenciosa pode gerar trabalho duplicado mas não loops) |
 | 2026-05-13 | `bulk_create_targets` em `queries.py` usa `session.flush()` + rollback por IntegrityError para deduplicar sem abortar o batch inteiro | Permite importação CSV com duplicatas parciais sem falhar toda a operação |
 | 2026-05-13 | `get_target_screenshot_paths` resolve caminhos de screenshots do filesystem em vez de ler o banco; path convention é `OUTPUT_DIR/screenshots/{target_id}/*.{png,jpg}` | Screenshots são artefatos de disco; o banco guarda só metadados (URL + dir relativo) |
+| 2026-05-13 | Pipeline chain usa `chain([t1, t2, ...]).apply_async()` em vez de `link=` dentro de `.set()` | `.set()` não aceita `link=`; forma correta é Canvas chain |
+| 2026-05-13 | Recon recursivo dispara tasks Celery assíncronas em vez de recursão direta | Evitar bloqueio de worker por horas em targets com muitos subdomínios |
+| 2026-05-13 | Classificação heurística sempre disponível como fallback; IA é enhancement opcional | Sistema funcional sem API key; score e confidence refletem qual modo foi usado |
+| 2026-05-13 | Abstração `AIProvider` suporta Anthropic, OpenAI-compatible e Ollama | Flexibilidade de usar modelo local ou trocar provider sem mudar o classificador |
+| 2026-05-13 | Validação de domínio por regex em `normalize_domain` antes de qualquer operação | Rejeição limpa de inputs inválidos; evitar erros obscuros nas ferramentas |
+| 2026-05-13 | Validação de scope em cada etapa do pipeline contra `scope_includes`/`scope_excludes` | Evitar scan out-of-scope, que é violação de regras de bug bounty |
+| 2026-05-13 | `webcrawl` ReconResult inclui campo `source_tool` para preservar proveniência katana vs gau | URLs do katana (ativas) têm prioridade sobre gau (históricas) na análise |
+| 2026-05-13 | Screenshot ReconResult inclui campo `filename` com o nome do arquivo gerado pelo gowitness | Permite relacionar screenshot específico com URL específica na análise da Fase 3 |

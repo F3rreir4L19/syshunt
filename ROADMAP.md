@@ -119,15 +119,51 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 
 ---
 
-## FASE 3 — ANÁLISE POR IA
-*Objetivo: Claude API integrada para scoring e análise*
 
-### Integração Claude API
-- [ ] `core/analysis/ai_analyzer.py` — cliente Claude com retry/rate limiting
-- [ ] Prompt de scoring de findings (estruturado conforme SPEC.md)
-- [ ] Parser do response JSON de scoring
-- [ ] Cache de análises (evitar re-análise de findings idênticos)
-- [ ] Testes com respostas mockadas da API
+## FASE 2.5 — CORREÇÕES E FUNDAÇÃO PARA IA
+*Objetivo: corrigir bugs críticos da Fase 2 e preparar a infra de classificação antes de implementar IA*
+
+### Correções de Pipeline
+- [ ] Corrigir `run_full_pipeline`: substituir `link=` dentro de `.set()` por `chain([...]).apply_async()` (Canvas correto)
+- [ ] Corrigir `run_port_scan`: usar `urllib.parse.urlparse` em vez de `_extract_host` manual para extrair hostname
+- [ ] Refatorar `run_recursive_subdomain_enum` para disparar tasks Celery assíncronas em vez de recursão direta bloqueante
+- [ ] Atualizar `test_pipeline_docker.py` para refletir Fases 1.5/2 (status `recon_done`, 7 ReconResults)
+
+### Correções de Dados e Segurança
+- [ ] Validação de domínio por regex em `normalize_domain` e `bulk_create_targets`: rejeitar inputs com caracteres inválidos antes de qualquer operação
+- [ ] Validação de scope em cada task do pipeline: subdomínios fora de `scope_includes` ou em `scope_excludes` não são processados nas etapas seguintes
+- [ ] Hash completo sha256 em `_data_hash` (remover `[:16]`)
+- [ ] `run_web_crawl`: adicionar campo `source_tool` nos data_items (`{"url": u, "source_tool": "katana"}`)
+- [ ] `run_screenshot`: capturar e armazenar `filename` gerado pelo gowitness no ReconResult data
+
+### Correções de Dashboard
+- [ ] Corrigir `_parse_domains_from_csv`: fallback para lista sem header não deve excluir linhas com vírgula; deve parsear apenas a primeira coluna
+- [ ] Adicionar validação de formato de domínio no formulário "Add Target" antes de submeter
+
+### Novos Wrappers
+- [ ] `tools/dnsx_wrapper.py` — resolução e validação de subdomínios antes do httpx; filtra wildcard e NXDOMAIN
+- [ ] `tools/ffuf_wrapper.py` — fuzzing de diretórios e parâmetros em hosts ativos; integrar após web crawl
+- [ ] Integrar `dnsx` entre subdomain enum e http probe no pipeline
+
+### Fundação do Classificador
+- [ ] `core/analysis/provider.py` — abstração `AIProvider` com métodos `complete(prompt) → str` e `is_available() → bool`
+- [ ] Implementar `AnthropicProvider`, `OpenAICompatibleProvider`, `OllamaProvider`
+- [ ] `core/analysis/classifier_base.py` — scoring heurístico puro (severity + template category + evidence + URL context)
+- [ ] Penalização de score e confidence quando classificador heurístico: score × 0.8, confidence = "heuristic"
+- [ ] Migration: adicionar campos `classifier_used`, `confidence_note`, `ai_reasoning`, `ai_report_draft` à tabela `findings`
+- [ ] Testes do classificador heurístico com findings sintéticos cobrindo todos os critérios de score
+
+
+
+## FASE 3 — ANÁLISE POR IA
+*Objetivo: implementar enhancement via IA sobre o classificador heurístico já funcional da Fase 2.5*
+
+### Integração de Providers
+- [ ] Implementar `AIClassifier` em `core/analysis/classifier_ai.py` usando abstração `AIProvider`
+- [ ] Orquestrador em `core/analysis/classifier.py`: usa `AIClassifier` se provider disponível, senão `BaseClassifier`
+- [ ] Fallback automático: se provider configurado mas retorna erro → logar warning → usar heurístico
+- [ ] Cache de análises: hash do (finding_type + url + evidence_snippet) como chave; TTL configurável
+- [ ] Testes com providers mockados para Anthropic, OpenAI-compatible e Ollama
 
 ### Classifier
 - [ ] `core/analysis/classifier.py` — aplica scores + ordena findings
