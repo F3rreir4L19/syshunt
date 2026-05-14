@@ -163,41 +163,63 @@ disponível, todos os findings são classificados por este sistema.
 
 Quando um provider de IA está configurado e disponível, o classificador heurístico
 é substituído pela análise contextual via LLM. O score heurístico não é usado como
-input para a IA — a IA recebe os dados brutos e produz seu próprio score.
+input para a IA — a IA recebe os dados brutos e produz seu próprio score independente.
 
-Providers suportados:
+**Providers suportados:**
 - **Anthropic Claude** — padrão quando `ANTHROPIC_API_KEY` presente
 - **OpenAI-compatible** — qualquer endpoint compatível (OpenAI, Groq, Together, etc.) via `OPENAI_API_KEY` + `OPENAI_BASE_URL`
 - **Ollama** — modelos locais via `OLLAMA_BASE_URL` + `OLLAMA_MODEL`
 
-Seleção automática: `AI_PROVIDER` env var; se ausente, detecta pelo primeiro API key presente na ordem: Anthropic → OpenAI → Ollama.
+Seleção automática: `AI_PROVIDER` env var; se ausente, detecta pelo primeiro API key presente
+na ordem: Anthropic → OpenAI → Ollama. Se nenhum estiver disponível, o sistema cai
+automaticamente no classificador heurístico da seção 3.0 com log de warning.
 
-Campos adicionais preenchidos pela IA:
-- `classifier_used`: `"ai:anthropic"` | `"ai:openai"` | `"ai:ollama"`  
-- `ai_reasoning`: texto explicando o raciocínio do score
-- `ai_report_draft`: draft de report no formato HackerOne/Bugcrowd (somente para score ≥ 60)
-
-
-### 3.1 Scoring de Findings
-Para cada finding com status `new`, o sistema chama a Claude API com:
+**Input enviado para a IA (por finding):**
 - Tipo de vulnerabilidade detectada
 - URL/endpoint afetado
-- Evidência (response diff, payload, etc.)
-- Contexto do alvo (prod/staging, tecnologias detectadas)
-- Template que gerou o finding
+- Evidência bruta (response diff, payload, matched-at)
+- Contexto do alvo (tecnologias detectadas via httpx, prod vs staging inferido pela URL)
+- Template nuclei que gerou o finding (ID + categoria)
 
-Claude retorna:
+**Formato de resposta esperado (JSON estrito):**
 ```json
 {
   "score": 75,
   "confidence": "likely",
   "exploitation_difficulty": "medium",
   "severity": "high",
-  "reasoning": "...",
+  "reasoning": "Endpoint expõe painel administrativo sem autenticação em ambiente de produção...",
   "false_positive_risk": "low",
-  "suggested_next_steps": ["..."]
+  "suggested_next_steps": [
+    "Verificar se o acesso é realmente irrestrito sem cookies de sessão válidos",
+    "Testar com User-Agent padrão de browser"
+  ]
 }
 ```
+
+Valores válidos por campo:
+- `score`: inteiro 0–100
+- `confidence`: `"confirmed"` | `"likely"` | `"possible"` | `"unlikely"`
+- `exploitation_difficulty`: `"trivial"` | `"easy"` | `"medium"` | `"hard"`
+- `severity`: `"critical"` | `"high"` | `"medium"` | `"low"` | `"info"`
+- `false_positive_risk`: `"low"` | `"medium"` | `"high"`
+
+**Campos preenchidos no Finding após análise por IA:**
+- `auto_score`: score retornado pela IA (0–100, sem penalização)
+- `confidence`: valor retornado pela IA
+- `exploitation_difficulty`: valor retornado pela IA
+- `severity`: valor retornado pela IA (pode sobrescrever o do nuclei)
+- `classifier_used`: `"ai:anthropic"` | `"ai:openai"` | `"ai:ollama"`
+- `confidence_note`: vazio quando classificado por IA
+- `ai_reasoning`: campo `reasoning` retornado pela IA
+- `ai_report_draft`: draft de report gerado (somente para score ≥ 60; ver seção 3.2)
+
+**Comportamento em caso de falha do provider:**
+- Timeout ou erro de API → logar `structlog.warning` com provider e erro
+- Fallback automático para classificador heurístico da seção 3.0
+- `classifier_used` registra `"heuristic"` mesmo que o provider estivesse configurado
+- Finding não fica bloqueado aguardando retry da IA; retry pode ser disparado manualmente
+  pelo pesquisador no dashboard
 
 ### 3.2 Geração de Relatório Draft
 Para findings com score ≥ 60, Claude gera um draft de report no formato padrão HackerOne/Bugcrowd:
