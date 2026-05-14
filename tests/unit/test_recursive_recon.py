@@ -79,7 +79,7 @@ def test_recursive_stores_deduplicated_subdomains(monkeypatch: Any) -> None:
     assert result["domain"] == "example.com"
     assert result["inserted"] == 3  # api, mail, cdn (api deduplicated cross-tool)
     assert result["errors"] == []
-    assert result["recursed"] == 0
+    assert result["dispatched"] == 0
 
     with sf() as session:
         rows = (
@@ -113,7 +113,7 @@ def test_recursive_does_not_recurse_when_depth_zero(monkeypatch: Any) -> None:
         depth=0,
     )
 
-    assert result["recursed"] == 0
+    assert result["dispatched"] == 0
 
 
 def test_recursive_skips_processed_domains(monkeypatch: Any) -> None:
@@ -140,7 +140,7 @@ def test_recursive_skips_processed_domains(monkeypatch: Any) -> None:
     )
 
     # depth=1 but all subdomains are marked processed → no recursion
-    assert result["recursed"] == 0
+    assert result["dispatched"] == 0
 
 
 def test_recursive_tolerates_tool_failure(monkeypatch: Any) -> None:

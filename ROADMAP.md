@@ -11,7 +11,7 @@
 **Prompt de abertura de sessão (copie e adapte):**
 ```
 Leia o CLAUDE.md e o ROADMAP.md do projeto Syshunt.
-Estou na [FASE 1 — FUNDAÇÃO DO PROJETO].
+Estou na [FASE 2.5 — FUNDAÇÃO DO PROJETO].
 Execute as tasks pendentes nessa fase.
 Após cada task: rode os testes, faça commit com mensagem descritiva.
 Atualize os checkboxes no ROADMAP.md ao concluir cada item.
@@ -124,34 +124,34 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 *Objetivo: corrigir bugs críticos da Fase 2 e preparar a infra de classificação antes de implementar IA*
 
 ### Correções de Pipeline
-- [ ] Corrigir `run_full_pipeline`: substituir `link=` dentro de `.set()` por `chain([...]).apply_async()` (Canvas correto)
-- [ ] Corrigir `run_port_scan`: usar `urllib.parse.urlparse` em vez de `_extract_host` manual para extrair hostname
-- [ ] Refatorar `run_recursive_subdomain_enum` para disparar tasks Celery assíncronas em vez de recursão direta bloqueante
-- [ ] Atualizar `test_pipeline_docker.py` para refletir Fases 1.5/2 (status `recon_done`, 7 ReconResults)
+- [x] Corrigir `run_full_pipeline`: substituir `link=` dentro de `.set()` por `chain([...]).apply_async()` (Canvas correto)
+- [x] Corrigir `run_port_scan`: usar `urllib.parse.urlparse` em vez de `_extract_host` manual para extrair hostname
+- [x] Refatorar `run_recursive_subdomain_enum` para disparar tasks Celery assíncronas em vez de recursão direta bloqueante
+- [x] Atualizar `test_pipeline_docker.py` para refletir Fases 1.5/2 (status `recon_done`, 7 ReconResults)
 
 ### Correções de Dados e Segurança
-- [ ] Validação de domínio por regex em `normalize_domain` e `bulk_create_targets`: rejeitar inputs com caracteres inválidos antes de qualquer operação
+- [x] Validação de domínio por regex em `normalize_domain` e `bulk_create_targets`: rejeitar inputs com caracteres inválidos antes de qualquer operação
 - [ ] Validação de scope em cada task do pipeline: subdomínios fora de `scope_includes` ou em `scope_excludes` não são processados nas etapas seguintes
-- [ ] Hash completo sha256 em `_data_hash` (remover `[:16]`)
-- [ ] `run_web_crawl`: adicionar campo `source_tool` nos data_items (`{"url": u, "source_tool": "katana"}`)
-- [ ] `run_screenshot`: capturar e armazenar `filename` gerado pelo gowitness no ReconResult data
+- [x] Hash completo sha256 em `_data_hash` (remover `[:16]`)
+- [x] `run_web_crawl`: adicionar campo `source_tool` nos data_items (`{"url": u, "source_tool": "katana"}`)
+- [x] `run_screenshot`: capturar e armazenar `filename` gerado pelo gowitness no ReconResult data
 
 ### Correções de Dashboard
-- [ ] Corrigir `_parse_domains_from_csv`: fallback para lista sem header não deve excluir linhas com vírgula; deve parsear apenas a primeira coluna
+- [x] Corrigir `_parse_domains_from_csv`: fallback para lista sem header não deve excluir linhas com vírgula; deve parsear apenas a primeira coluna
 - [ ] Adicionar validação de formato de domínio no formulário "Add Target" antes de submeter
 
 ### Novos Wrappers
-- [ ] `tools/dnsx_wrapper.py` — resolução e validação de subdomínios antes do httpx; filtra wildcard e NXDOMAIN
-- [ ] `tools/ffuf_wrapper.py` — fuzzing de diretórios e parâmetros em hosts ativos; integrar após web crawl
+- [x] `tools/dnsx_wrapper.py` — resolução e validação de subdomínios antes do httpx; filtra wildcard e NXDOMAIN
+- [x] `tools/ffuf_wrapper.py` — fuzzing de diretórios e parâmetros em hosts ativos; integrar após web crawl
 - [ ] Integrar `dnsx` entre subdomain enum e http probe no pipeline
 
 ### Fundação do Classificador
-- [ ] `core/analysis/provider.py` — abstração `AIProvider` com métodos `complete(prompt) → str` e `is_available() → bool`
-- [ ] Implementar `AnthropicProvider`, `OpenAICompatibleProvider`, `OllamaProvider`
-- [ ] `core/analysis/classifier_base.py` — scoring heurístico puro (severity + template category + evidence + URL context)
-- [ ] Penalização de score e confidence quando classificador heurístico: score × 0.8, confidence = "heuristic"
-- [ ] Migration: adicionar campos `classifier_used`, `confidence_note`, `ai_reasoning`, `ai_report_draft` à tabela `findings`
-- [ ] Testes do classificador heurístico com findings sintéticos cobrindo todos os critérios de score
+- [x] `core/analysis/provider.py` — abstração `AIProvider` com métodos `complete(prompt) → str` e `is_available() → bool`
+- [x] Implementar `AnthropicProvider`, `OpenAICompatibleProvider`, `OllamaProvider`
+- [x] `core/analysis/classifier_base.py` — scoring heurístico puro (severity + template category + evidence + URL context)
+- [x] Penalização de score e confidence quando classificador heurístico: score × 0.8, confidence = "heuristic"
+- [x] Migration: adicionar campos `classifier_used`, `confidence_note`, `ai_reasoning`, `ai_report_draft` à tabela `findings`
+- [x] Testes do classificador heurístico com findings sintéticos cobrindo todos os critérios de score
 
 
 
@@ -272,3 +272,4 @@ Funcionalidades desejáveis mas não essenciais para v1:
 | Data | Fase | O que foi feito | Pendências |
 |------|------|-----------------|------------|
 | 2026-05-13 | Spec | CLAUDE.md, SPEC.md, docker-compose.yml, ROADMAP.md criados | Começar Fase 1 |
+| 2026-05-13 | 2.5 | Pipeline Canvas chain, urlparse, async recursive recon task, normalize_domain regex, check_in_scope, sha256 completo, source_tool no crawl, filename no screenshot, CSV fix, dnsx/ffuf wrappers, AIProvider, classifier_base, migration findings | Pendente: scope validation no pipeline, dnsx integração, validação no form Add Target |

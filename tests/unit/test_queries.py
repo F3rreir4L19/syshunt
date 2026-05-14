@@ -270,3 +270,89 @@ def test_get_target_screenshot_paths_returns_empty_when_dir_missing(tmp_path: Pa
     paths = queries.get_target_screenshot_paths(99, str(tmp_path))
 
     assert paths == []
+
+
+# ---------------------------------------------------------------------------
+# normalize_domain validation
+# ---------------------------------------------------------------------------
+
+import pytest
+
+
+def test_normalize_domain_strips_url_prefix() -> None:
+    assert queries.normalize_domain("https://example.com/") == "example.com"
+
+
+def test_normalize_domain_lowercases() -> None:
+    assert queries.normalize_domain("Example.COM") == "example.com"
+
+
+def test_normalize_domain_accepts_hyphen_in_label() -> None:
+    assert queries.normalize_domain("my-site.example.com") == "my-site.example.com"
+
+
+def test_normalize_domain_rejects_spaces() -> None:
+    with pytest.raises(ValueError, match="Invalid domain"):
+        queries.normalize_domain("bad domain.com")
+
+
+def test_normalize_domain_rejects_special_chars() -> None:
+    with pytest.raises(ValueError, match="Invalid domain"):
+        queries.normalize_domain("bad!domain.com")
+
+
+def test_normalize_domain_rejects_underscore() -> None:
+    with pytest.raises(ValueError, match="Invalid domain"):
+        queries.normalize_domain("bad_domain.com")
+
+
+def test_normalize_domain_empty_returns_empty() -> None:
+    assert queries.normalize_domain("") == ""
+
+
+# ---------------------------------------------------------------------------
+# check_in_scope
+# ---------------------------------------------------------------------------
+
+
+def test_check_in_scope_exact_match() -> None:
+    assert queries.check_in_scope("example.com", ["example.com"], []) is True
+
+
+def test_check_in_scope_subdomain_match() -> None:
+    assert queries.check_in_scope("api.example.com", ["example.com"], []) is True
+
+
+def test_check_in_scope_not_in_includes() -> None:
+    assert queries.check_in_scope("other.com", ["example.com"], []) is False
+
+
+def test_check_in_scope_excluded() -> None:
+    assert queries.check_in_scope("staging.example.com", ["example.com"], ["staging.example.com"]) is False
+
+
+def test_check_in_scope_subdomain_excluded() -> None:
+    assert queries.check_in_scope("x.staging.example.com", ["example.com"], ["staging.example.com"]) is False
+
+
+def test_check_in_scope_empty_includes_allows_all() -> None:
+    assert queries.check_in_scope("anything.com", [], []) is True
+
+
+def test_check_in_scope_exclude_overrides_include() -> None:
+    assert queries.check_in_scope("api.example.com", ["example.com"], ["api.example.com"]) is False
+
+
+# ---------------------------------------------------------------------------
+# bulk_create_targets rejects invalid domains
+# ---------------------------------------------------------------------------
+
+
+def test_bulk_create_targets_rejects_invalid_domain() -> None:
+    with build_session() as session:
+        created, skipped, errors = queries.bulk_create_targets(
+            session, ["valid.com", "bad domain!"]
+        )
+    assert created == 1
+    assert len(errors) == 1
+    assert "bad domain!" in errors[0]

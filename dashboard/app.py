@@ -78,11 +78,15 @@ def _parse_domains_from_csv(content: bytes) -> list[str]:
             if val:
                 domains.append(val)
     else:
-        # Treat each line as a raw domain (skip header-looking lines)
+        # No 'domain' column: treat first field of each line as the domain.
+        # The header row (if any) will be rejected by normalize_domain validation.
         for line in text.splitlines():
             stripped = line.strip()
-            if stripped and "," not in stripped:
-                domains.append(stripped)
+            if not stripped:
+                continue
+            first_col = stripped.split(",")[0].strip()
+            if first_col:
+                domains.append(first_col)
     return domains
 
 

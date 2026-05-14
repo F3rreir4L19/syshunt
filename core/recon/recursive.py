@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
+from celery import Celery
 from redis import Redis
 from redis.exceptions import RedisError
 
@@ -38,6 +39,12 @@ def _is_processed(client: Redis, key: str, domain: str) -> bool:
         return False
 
 
+def _get_celery_app() -> Celery:
+    """Return the Celery app lazily to avoid circular imports."""
+    from core.pipeline.tasks import celery_app
+    return celery_app
+
+
 def run_recursive_subdomain_enum(
     domain: str,
     root_target_id: int,
@@ -47,9 +54,9 @@ def run_recursive_subdomain_enum(
     """Enumerate subdomains for *domain* and store results under root_target_id.
 
     For each new subdomain discovered (not already in the Redis tracking set),
-    if depth > 0 a recursive call is made with depth-1.  All results are stored
-    under root_target_id so the entire recursive tree is queryable from the
-    root target.
+    if depth > 0 a Celery task is dispatched asynchronously (non-blocking).
+    All results are stored under root_target_id so the entire recursive tree
+    is queryable from the root target.
 
     Args:
         domain: The domain to enumerate subdomains for.
@@ -84,7 +91,7 @@ def run_recursive_subdomain_enum(
 
     if not all_subdomains and errors:
         log.error("all_tools_failed", errors=errors)
-        return {"domain": domain, "inserted": 0, "errors": errors, "recursed": 0}
+        return {"domain": domain, "inserted": 0, "errors": errors, "dispatched": 0}
 
     with SessionLocal() as session:
         inserted = queries.insert_recon_results_with_dedup(
@@ -98,25 +105,31 @@ def run_recursive_subdomain_enum(
 
     log.info("subdomains_stored", count=len(inserted))
 
-    recursed = 0
+    dispatched = 0
     if depth > 0:
+        celery_app = _get_celery_app()
+        # Import the Celery task for recursive recon dispatch
+        from core.pipeline.tasks import run_recursive_subdomain_enum_task
+
         for subdomain in all_subdomains:
             if _is_processed(redis, key, subdomain):
                 continue
-            log.debug("recursing", subdomain=subdomain, remaining_depth=depth - 1)
-            run_recursive_subdomain_enum(
-                domain=subdomain,
-                root_target_id=root_target_id,
-                depth=depth - 1,
-                session_key=key,
+            log.debug("dispatching_recursive", subdomain=subdomain, remaining_depth=depth - 1)
+            run_recursive_subdomain_enum_task.apply_async(
+                kwargs={
+                    "domain": subdomain,
+                    "root_target_id": root_target_id,
+                    "depth": depth - 1,
+                    "session_key": key,
+                }
             )
-            recursed += 1
+            dispatched += 1
 
     return {
         "domain": domain,
         "inserted": len(inserted),
         "errors": errors,
-        "recursed": recursed,
+        "dispatched": dispatched,
     }
 
 

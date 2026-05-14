@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Any
 
 from celery import Celery
@@ -10,6 +11,12 @@ from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 
 from core.db.models import Finding, ReconResult, Target
+
+# Valid domain: labels of letters/digits/hyphens separated by dots, no leading/trailing
+# hyphens per label.  Also accepts plain hostnames without a dot (e.g. "localhost").
+_DOMAIN_RE = re.compile(
+    r"^(?:[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?$"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -23,7 +30,12 @@ def normalize_domain(domain: str) -> str:
         cleaned = cleaned.removeprefix("http://")
     elif cleaned.startswith("https://"):
         cleaned = cleaned.removeprefix("https://")
-    return cleaned.strip("/")
+    cleaned = cleaned.strip("/")
+    if cleaned and not _DOMAIN_RE.match(cleaned):
+        raise ValueError(
+            f"Invalid domain {domain!r}: only letters, digits, hyphens and dots are allowed"
+        )
+    return cleaned
 
 
 def create_target(session: Session, domain: str) -> Target:
@@ -52,7 +64,11 @@ def bulk_create_targets(
     skipped = 0
     errors: list[str] = []
     for raw in domains:
-        normalized = normalize_domain(raw)
+        try:
+            normalized = normalize_domain(raw)
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
         if not normalized:
             errors.append(f"Empty domain (raw: {raw!r})")
             continue
@@ -65,6 +81,29 @@ def bulk_create_targets(
             skipped += 1
     session.commit()
     return created, skipped, errors
+
+
+def check_in_scope(
+    domain: str,
+    scope_includes: list[str],
+    scope_excludes: list[str],
+) -> bool:
+    """Return True if *domain* is within scope for the given target.
+
+    A domain is in-scope when it matches (or is a subdomain of) at least one
+    entry in *scope_includes* and does not match any entry in *scope_excludes*.
+    An empty *scope_includes* means everything is allowed.
+    """
+    def _matches(d: str, pattern: str) -> bool:
+        d = d.lower()
+        pattern = pattern.lower()
+        return d == pattern or d.endswith("." + pattern)
+
+    if scope_includes and not any(_matches(domain, p) for p in scope_includes):
+        return False
+    if any(_matches(domain, p) for p in scope_excludes):
+        return False
+    return True
 
 
 def list_targets(session: Session) -> list[dict[str, object]]:
@@ -215,9 +254,7 @@ def get_pipeline_status(app: Celery) -> dict[str, object]:
 
 
 def _data_hash(data: dict[str, Any]) -> str:
-    return hashlib.sha256(
-        json.dumps(data, sort_keys=True).encode()
-    ).hexdigest()[:16]
+    return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
 
 
 def insert_recon_results_with_dedup(

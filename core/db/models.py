@@ -54,6 +54,10 @@ class Finding(TimestampMixin, Base):
     raw_evidence: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict_default)
     screenshots: Mapped[list[str]] = mapped_column(JSON, default=list_default)
     reviewed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    classifier_used: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    confidence_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_report_draft: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     target: Mapped[Target] = relationship(back_populates="findings")
 

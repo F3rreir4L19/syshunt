@@ -38,3 +38,13 @@ def test_parse_csv_ignores_empty_lines() -> None:
 
 def test_parse_csv_returns_empty_on_empty_file() -> None:
     assert _parse_domains_from_csv(b"") == []
+
+
+def test_parse_csv_multi_column_no_domain_header_uses_first_column() -> None:
+    # File has commas but no 'domain' column — old code would skip these lines
+    content = b"example.com,notes,extra\nother.io,stuff,more\n"
+
+    domains = _parse_domains_from_csv(content)
+
+    assert "example.com" in domains
+    assert "other.io" in domains

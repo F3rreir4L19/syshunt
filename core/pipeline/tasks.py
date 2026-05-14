@@ -4,9 +4,10 @@ import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import structlog
-from celery import Celery
+from celery import Celery, chain
 
 from core.db import queries
 from core.db.models import Finding, ReconResult, Target
@@ -155,7 +156,9 @@ def run_port_scan(target_id: int) -> dict[str, int | str]:
         # Use hostnames from live HTTP services; fall back to root domain
         hosts = list(
             {
-                r.data.get("host") or _extract_host(r.data.get("url", ""))
+                r.data.get("host")
+                or urlparse(r.data.get("url", "")).hostname
+                or ""
                 for r in session.query(ReconResult)
                 .filter(
                     ReconResult.target_id == target.id,
@@ -165,7 +168,7 @@ def run_port_scan(target_id: int) -> dict[str, int | str]:
                 )
                 .all()
             }
-            - {""}
+            - {"", None}
         ) or [target.domain]
 
         errors: list[str] = []
@@ -223,7 +226,8 @@ def run_web_crawl(target_id: int) -> dict[str, int | str]:
         crawl_targets = urls or [f"https://{target.domain}"]
 
         errors: list[str] = []
-        all_urls: set[str] = set()
+        # map url -> source_tool; later entries (gau) don't overwrite katana
+        url_to_source: dict[str, str] = {}
 
         for url in crawl_targets:
             for wrapper_cls in (KatanaWrapper, GauWrapper):
@@ -238,9 +242,11 @@ def run_web_crawl(target_id: int) -> dict[str, int | str]:
                     )
                     errors.append(f"{wrapper.name}:{url}: {result.error}")
                     continue
-                all_urls.update(result.parsed_data)
+                for crawled_url in result.parsed_data:
+                    if crawled_url not in url_to_source:
+                        url_to_source[crawled_url] = wrapper.name
 
-        if not all_urls and errors:
+        if not url_to_source and errors:
             raise RuntimeError(f"all crawlers failed: {'; '.join(errors)}")
 
         inserted = queries.insert_recon_results_with_dedup(
@@ -248,7 +254,9 @@ def run_web_crawl(target_id: int) -> dict[str, int | str]:
             target_id=target.id,
             tool="webcrawl",
             result_type="crawled_url",
-            data_items=[{"url": u} for u in all_urls],
+            data_items=[
+                {"url": u, "source_tool": src} for u, src in url_to_source.items()
+            ],
         )
         session.commit()
 
@@ -291,7 +299,14 @@ def run_screenshot(target_id: int) -> dict[str, int | str]:
 
         from tools.base import ToolOptions
 
+        _img_suffixes = {".png", ".jpg", ".jpeg"}
+
         for url in screenshot_targets:
+            before: set[str] = {
+                p.name
+                for p in screenshot_dir.iterdir()
+                if p.suffix.lower() in _img_suffixes
+            }
             shot_result = GoWitnessWrapper().run(
                 url, ToolOptions(screenshot_dir=screenshot_dir)
             )
@@ -299,12 +314,17 @@ def run_screenshot(target_id: int) -> dict[str, int | str]:
                 log.warning("screenshot_item_failed", url=url, error=shot_result.error)
                 errors.append(f"{url}: {shot_result.error}")
                 continue
-            # Record relative path — pipeline task resolves actual filename by
-            # listing the directory before and after, but storing the URL is
-            # sufficient for the dashboard to reconstruct the path.
+            after: set[str] = {
+                p.name
+                for p in screenshot_dir.iterdir()
+                if p.suffix.lower() in _img_suffixes
+            }
+            new_files = sorted(after - before)
+            filename = new_files[0] if new_files else None
             data_items.append({
                 "url": url,
                 "screenshot_dir": str(screenshot_dir.relative_to(_output_dir())),
+                "filename": filename,
             })
 
         if not data_items and errors:
@@ -414,18 +434,14 @@ def run_full_pipeline(target_id: int, skip_recon: bool = False) -> dict[str, int
     if skip_recon:
         result = run_nuclei_scan.apply_async(args=[target_id])
     else:
-        result = run_subdomain_enum.apply_async(
-            args=[target_id],
-            link=run_http_probe.si(target_id).set(
-                link=run_port_scan.si(target_id).set(
-                    link=run_web_crawl.si(target_id).set(
-                        link=run_screenshot.si(target_id).set(
-                            link=run_nuclei_scan.si(target_id)
-                        )
-                    )
-                )
-            ),
-        )
+        result = chain(
+            run_subdomain_enum.si(target_id),
+            run_http_probe.si(target_id),
+            run_port_scan.si(target_id),
+            run_web_crawl.si(target_id),
+            run_screenshot.si(target_id),
+            run_nuclei_scan.si(target_id),
+        ).apply_async()
 
     return {
         "target_id": target_id,
@@ -435,13 +451,22 @@ def run_full_pipeline(target_id: int, skip_recon: bool = False) -> dict[str, int
     }
 
 
-def _extract_host(url: str) -> str:
-    """Extract hostname from a URL string without external dependencies."""
-    for prefix in ("https://", "http://"):
-        if url.startswith(prefix):
-            rest = url[len(prefix):]
-            return rest.split("/")[0].split(":")[0]
-    return ""
+@celery_app.task(name="core.pipeline.run_recursive_subdomain_enum_task")
+def run_recursive_subdomain_enum_task(
+    domain: str,
+    root_target_id: int,
+    depth: int,
+    session_key: str | None = None,
+) -> dict[str, Any]:
+    """Celery task wrapper for run_recursive_subdomain_enum."""
+    from core.recon.recursive import run_recursive_subdomain_enum
+
+    return run_recursive_subdomain_enum(
+        domain=domain,
+        root_target_id=root_target_id,
+        depth=depth,
+        session_key=session_key,
+    )
 
 
 def _finding_from_nuclei_result(target_id: int, data: dict[str, Any]) -> Finding:
