@@ -73,6 +73,14 @@ class FakeGoWitnessWrapper:
         return FakeToolResult(success=True, parsed_data=["✔ 200 - https://api.example.com"])
 
 
+class FakeDnsxWrapper:
+    """Resolves all subdomains (test always-pass stub)."""
+
+    def run(self, target: str) -> FakeToolResult:
+        resolved = [line.strip() for line in target.splitlines() if line.strip()]
+        return FakeToolResult(success=True, parsed_data=resolved)
+
+
 class FakeNucleiWrapper:
     def run(self, target: str) -> FakeToolResult:
         assert target == "https://api.example.com"
@@ -98,12 +106,14 @@ def test_run_full_pipeline_executes_chain_in_eager_mode(monkeypatch, tmp_path: P
     session_factory = build_session_factory()
     monkeypatch.setattr(tasks, "SessionLocal", session_factory)
     monkeypatch.setattr(tasks, "SubfinderWrapper", FakeSubfinderWrapper)
+    monkeypatch.setattr(tasks, "DnsxWrapper", FakeDnsxWrapper)
     monkeypatch.setattr(tasks, "HttpxWrapper", FakeHttpxWrapper)
     monkeypatch.setattr(tasks, "NmapWrapper", FakeNmapWrapper)
     monkeypatch.setattr(tasks, "KatanaWrapper", FakeKatanaWrapper)
     monkeypatch.setattr(tasks, "GauWrapper", FakeGauWrapper)
     monkeypatch.setattr(tasks, "GoWitnessWrapper", FakeGoWitnessWrapper)
     monkeypatch.setattr(tasks, "NucleiWrapper", FakeNucleiWrapper)
+    monkeypatch.setattr(tasks.run_ai_analysis, "apply_async", lambda *a, **kw: None)
     monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
     monkeypatch.setattr(tasks.celery_app.conf, "task_always_eager", True)
 
@@ -125,8 +135,9 @@ def test_run_full_pipeline_executes_chain_in_eager_mode(monkeypatch, tmp_path: P
     assert summary["workflow_id"]
     assert saved_target is not None
     assert saved_target.status == "recon_done"
-    # subfinder(1) + httpx(1) + nmap(1) + webcrawl(2) + screenshot(1) + nuclei(1) = 7
-    assert recon_results == 7
+    # subfinder(1) + dnsx_filter_marker(1) + httpx(1) + nmap(1) + webcrawl(2)
+    # + screenshot(1) + nuclei(1) = 8
+    assert recon_results == 8
     assert findings == 1
 
 
@@ -134,6 +145,7 @@ def test_run_full_pipeline_skip_recon_runs_only_nuclei(monkeypatch, tmp_path: Pa
     session_factory = build_session_factory()
     monkeypatch.setattr(tasks, "SessionLocal", session_factory)
     monkeypatch.setattr(tasks, "NucleiWrapper", FakeNucleiWrapper)
+    monkeypatch.setattr(tasks.run_ai_analysis, "apply_async", lambda *a, **kw: None)
     monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
     monkeypatch.setattr(tasks.celery_app.conf, "task_always_eager", True)
 

@@ -434,11 +434,76 @@ def run_nuclei_scan(target_id: int) -> dict[str, int | str]:
         session.commit()
 
     log.info("nuclei_scan_completed", created=len(inserted), errors=len(errors))
+
+    # Dispatch AI analysis asynchronously; non-fatal if Redis unavailable
+    try:
+        run_ai_analysis.apply_async(args=[target_id])
+    except Exception as dispatch_err:
+        log.warning("ai_analysis_dispatch_failed", error=str(dispatch_err))
+
     return {
         "target_id": target_id,
         "tool": "nuclei",
         "created": len(inserted),
     }
+
+
+@celery_app.task(name="core.pipeline.run_ai_analysis")
+def run_ai_analysis(target_id: int, limit: int | None = None) -> dict[str, Any]:
+    """Classify all new, unclassified findings for *target_id* using AI or heuristics.
+
+    If *limit* is None, the value is read from the ``ai_analysis_limit`` system
+    setting at runtime.  Only the top-*limit* findings by heuristic score are
+    processed; the rest remain unclassified until the next run.
+
+    Sets target.status = "ready_for_review" when all selected findings are done.
+    """
+    log = structlog.get_logger().bind(target_id=target_id, task="run_ai_analysis")
+    from core.analysis.classifier import classify_finding
+
+    with SessionLocal() as session:
+        target = session.get(Target, target_id)
+        if target is None:
+            raise ValueError(f"Target {target_id} not found")
+
+        # Load API keys from system_settings into env so get_provider() sees them
+        for key in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL",
+                    "OLLAMA_BASE_URL", "AI_PROVIDER"):
+            val = queries.get_setting(session, key)
+            if val:
+                os.environ[key] = val
+
+        # Determine effective limit: prefer explicit arg, then system_setting
+        effective_limit = limit
+        if effective_limit is None:
+            limit_str = queries.get_setting(session, "ai_analysis_limit")
+            if limit_str:
+                try:
+                    effective_limit = int(limit_str)
+                except ValueError:
+                    log.warning("ai_analysis_limit_invalid", value=limit_str)
+
+        findings_query = (
+            session.query(Finding)
+            .filter(
+                Finding.target_id == target_id,
+                Finding.status == "new",
+                Finding.classifier_used.is_(None),
+            )
+            .order_by(Finding.auto_score.desc())
+        )
+        if effective_limit is not None:
+            findings_query = findings_query.limit(effective_limit)
+        findings = findings_query.all()
+
+        for finding in findings:
+            classify_finding(finding, target, session)
+
+        target.status = "ready_for_review"
+        session.commit()
+
+    log.info("ai_analysis_completed", classified=len(findings))
+    return {"target_id": target_id, "classified": len(findings)}
 
 
 @celery_app.task(name="core.pipeline.run_dnsx_filter")

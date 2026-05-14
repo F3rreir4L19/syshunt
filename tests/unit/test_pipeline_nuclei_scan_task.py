@@ -68,6 +68,7 @@ def test_run_nuclei_scan_persists_recon_results_and_findings(monkeypatch) -> Non
     session_factory = build_session_factory()
     monkeypatch.setattr(tasks, "SessionLocal", session_factory)
     monkeypatch.setattr(tasks, "NucleiWrapper", FakeNucleiWrapper)
+    monkeypatch.setattr(tasks.run_ai_analysis, "apply_async", lambda *a, **kw: None)
 
     with session_factory() as session:
         target = Target(domain="example.com")
@@ -124,6 +125,7 @@ def test_run_nuclei_scan_raises_only_if_all_targets_fail(monkeypatch) -> None:
     session_factory = build_session_factory()
     monkeypatch.setattr(tasks, "SessionLocal", session_factory)
     monkeypatch.setattr(tasks, "NucleiWrapper", FakeNucleiWrapperAlwaysFails)
+    monkeypatch.setattr(tasks.run_ai_analysis, "apply_async", lambda *a, **kw: None)
 
     with session_factory() as session:
         target = Target(domain="example.com")
@@ -140,6 +142,7 @@ def test_run_nuclei_scan_continues_on_partial_failure(monkeypatch) -> None:
     session_factory = build_session_factory()
     monkeypatch.setattr(tasks, "SessionLocal", session_factory)
     monkeypatch.setattr(tasks, "NucleiWrapper", FakeNucleiWrapperPartialFailure)
+    monkeypatch.setattr(tasks.run_ai_analysis, "apply_async", lambda *a, **kw: None)
 
     with session_factory() as session:
         target = Target(domain="example.com")
@@ -178,6 +181,7 @@ def test_run_nuclei_scan_skips_out_of_scope_urls(monkeypatch) -> None:
     session_factory = build_session_factory()
     monkeypatch.setattr(tasks, "SessionLocal", session_factory)
     monkeypatch.setattr(tasks, "NucleiWrapper", FakeNucleiWrapper)
+    monkeypatch.setattr(tasks.run_ai_analysis, "apply_async", lambda *a, **kw: None)
 
     with session_factory() as session:
         target = Target(
