@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import streamlit as st
-from celery import Celery
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+
+from core.db.queries import (
+    create_target,
+    get_pipeline_status,
+    list_findings,
+    list_targets,
+)
+from core.db.session import SessionLocal
+from core.pipeline.tasks import celery_app
 from redis import Redis
 from redis.exceptions import RedisError
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.orm import Session
-
-from core.db.models import Finding, Target
-from core.db.session import SessionLocal
-from core.pipeline.tasks import celery_app, get_redis_url
 
 
 PAGE_TARGETS = "Targets"
@@ -153,106 +156,6 @@ def main() -> None:
     configure_page()
     selected_page = render_sidebar()
     render_page(selected_page)
-
-
-def normalize_domain(domain: str) -> str:
-    cleaned = domain.strip().lower()
-    if cleaned.startswith("http://"):
-        cleaned = cleaned.removeprefix("http://")
-    elif cleaned.startswith("https://"):
-        cleaned = cleaned.removeprefix("https://")
-
-    return cleaned.strip("/")
-
-
-def create_target(session: Session, domain: str) -> Target:
-    normalized = normalize_domain(domain)
-    if not normalized:
-        raise ValueError("Domain is required.")
-
-    target = Target(domain=normalized, scope_includes=[normalized])
-    session.add(target)
-    session.commit()
-    session.refresh(target)
-    return target
-
-
-def list_targets(session: Session) -> list[dict[str, object]]:
-    targets = session.query(Target).order_by(Target.created_at.desc()).all()
-    return [
-        {
-            "id": target.id,
-            "domain": target.domain,
-            "status": target.status,
-            "platform": target.platform or "",
-            "recon_depth": target.recon_depth,
-            "last_recon_at": target.last_recon_at,
-        }
-        for target in targets
-    ]
-
-
-def list_findings(
-    session: Session,
-    severities: list[str] | None = None,
-    statuses: list[str] | None = None,
-    search: str = "",
-) -> list[dict[str, object]]:
-    query = session.query(Finding).join(Target).order_by(Finding.created_at.desc())
-
-    if severities:
-        query = query.filter(Finding.severity.in_(severities))
-    if statuses:
-        query = query.filter(Finding.status.in_(statuses))
-
-    cleaned_search = search.strip().lower()
-    findings = query.all()
-    if cleaned_search:
-        findings = [
-            finding
-            for finding in findings
-            if cleaned_search in finding.title.lower()
-            or (finding.url is not None and cleaned_search in finding.url.lower())
-            or (
-                finding.template_id is not None
-                and cleaned_search in finding.template_id.lower()
-            )
-        ]
-
-    return [
-        {
-            "id": finding.id,
-            "severity": finding.severity,
-            "status": finding.status,
-            "title": finding.title,
-            "target": finding.target.domain,
-            "url": finding.url or "",
-            "confidence": finding.confidence,
-            "auto_score": finding.auto_score,
-        }
-        for finding in findings
-    ]
-
-
-def get_pipeline_status(app: Celery) -> dict[str, object]:
-    redis_url = str(app.conf.broker_url or get_redis_url())
-
-    try:
-        client = Redis.from_url(redis_url, socket_connect_timeout=0.5)
-        client.ping()
-        queued = client.llen("celery")
-    except RedisError as exc:
-        return {
-            "state": "offline",
-            "queued": None,
-            "error": f"Redis unavailable: {exc.__class__.__name__}",
-        }
-
-    return {
-        "state": "online",
-        "queued": int(queued),
-        "error": None,
-    }
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from core.db.base import Base
 from core.db.models import Finding, Target
+from core.db import queries
 
 
 def test_dashboard_pages_are_declared() -> None:
@@ -20,7 +21,7 @@ def test_create_target_normalizes_and_persists_domain() -> None:
     Base.metadata.create_all(engine)
 
     with Session(engine) as session:
-        target = app.create_target(session, " HTTPS://Example.com/ ")
+        target = queries.create_target(session, " HTTPS://Example.com/ ")
 
         saved = session.get(Target, target.id)
 
@@ -37,7 +38,7 @@ def test_list_targets_returns_dashboard_rows() -> None:
         session.add(Target(domain="example.com", status="pending"))
         session.commit()
 
-        rows = app.list_targets(session)
+        rows = queries.list_targets(session)
 
     assert rows[0]["domain"] == "example.com"
     assert rows[0]["status"] == "pending"
@@ -73,7 +74,7 @@ def test_list_findings_filters_by_severity_status_and_search() -> None:
         )
         session.commit()
 
-        rows = app.list_findings(
+        rows = queries.list_findings(
             session,
             severities=["high"],
             statuses=["new"],
@@ -94,9 +95,9 @@ def test_get_pipeline_status_reports_online_redis(monkeypatch) -> None:
             assert queue == "celery"
             return 3
 
-    monkeypatch.setattr(app.Redis, "from_url", lambda *args, **kwargs: FakeRedis())
+    monkeypatch.setattr(queries.Redis, "from_url", lambda *args, **kwargs: FakeRedis())
 
-    status = app.get_pipeline_status(app.celery_app)
+    status = queries.get_pipeline_status(app.celery_app)
 
     assert status == {
         "state": "online",
@@ -107,11 +108,11 @@ def test_get_pipeline_status_reports_online_redis(monkeypatch) -> None:
 
 def test_get_pipeline_status_reports_offline_redis(monkeypatch) -> None:
     def raise_error(*args, **kwargs):
-        raise app.RedisError("boom")
+        raise queries.RedisError("boom")
 
-    monkeypatch.setattr(app.Redis, "from_url", raise_error)
+    monkeypatch.setattr(queries.Redis, "from_url", raise_error)
 
-    status = app.get_pipeline_status(app.celery_app)
+    status = queries.get_pipeline_status(app.celery_app)
 
     assert status["state"] == "offline"
     assert status["queued"] is None
