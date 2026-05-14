@@ -17,6 +17,7 @@ from core.db.queries import (
     list_targets,
     normalize_domain,
 )
+from core.pipeline.tasks import run_ai_analysis
 from core.db.session import SessionLocal
 from core.pipeline.tasks import celery_app
 
@@ -305,6 +306,15 @@ def _render_finding_detail(finding_id: int) -> None:
         return
 
     st.markdown(f"### {detail['title']}")
+
+    classifier_used = detail.get("classifier_used") or ""
+    if classifier_used.startswith("ai:"):
+        st.success(f"🤖 AI ({classifier_used})")
+    elif classifier_used == "heuristic":
+        st.info("📐 Heuristic")
+    else:
+        st.caption("Not yet classified")
+
     col_a, col_b, col_c = st.columns(3)
     col_a.metric("Severity", str(detail["severity"]).upper())
     col_b.metric("Score", detail["auto_score"])
@@ -320,8 +330,30 @@ def _render_finding_detail(finding_id: int) -> None:
         f"**Status:** {detail['status']}"
     )
 
+    if classifier_used == "heuristic" and detail.get("confidence_note"):
+        st.warning(detail["confidence_note"])
+
+    if detail.get("ai_reasoning"):
+        with st.expander("AI Reasoning"):
+            st.write(detail["ai_reasoning"])
+
+    if detail.get("ai_report_draft"):
+        with st.expander("Report Draft"):
+            st.code(detail["ai_report_draft"], language="markdown")
+            if st.button("Copy to clipboard", key=f"copy_{finding_id}"):
+                st.write(detail["ai_report_draft"])
+
     with st.expander("Raw evidence"):
         st.json(detail["raw_evidence"])
+
+    # Re-analyze button (only when not yet AI-classified)
+    if not classifier_used or classifier_used == "heuristic":
+        if st.button("Re-analyze with AI", key=f"reanalyze_{finding_id}"):
+            try:
+                run_ai_analysis.apply_async(args=[int(detail["target_id"])])
+                st.success("Re-analysis queued.")
+            except Exception as exc:
+                st.error(f"Could not queue re-analysis: {exc}")
 
     # Screenshots associated with the finding's target
     paths = get_target_screenshot_paths(int(detail["target_id"]), _output_dir())
@@ -343,6 +375,213 @@ def render_placeholder_page(title: str) -> None:
     st.info("This area is planned for a later phase.")
 
 
+# ---------------------------------------------------------------------------
+# Settings page
+# ---------------------------------------------------------------------------
+
+
+def render_settings_page() -> None:  # noqa: PLR0912, PLR0915
+    st.header("Settings")
+
+    try:
+        session_ctx = SessionLocal()
+        session = session_ctx.__enter__()
+    except SQLAlchemyError as exc:
+        st.error(f"Database unavailable: {exc.__class__.__name__}")
+        return
+
+    try:
+        from core.db.queries import get_setting, set_setting
+
+        # ------------------------------------------------------------------
+        # AI Provider section
+        # ------------------------------------------------------------------
+        st.subheader("AI Provider")
+        with st.form("ai-provider-settings"):
+            ai_provider_choice = st.selectbox(
+                "AI Provider",
+                ["Auto", "anthropic", "openai", "ollama"],
+                index=["auto", "anthropic", "openai", "ollama"].index(
+                    (get_setting(session, "AI_PROVIDER") or "auto").lower()
+                ),
+            )
+            anthropic_key = st.text_input(
+                "Anthropic API Key",
+                value=get_setting(session, "ANTHROPIC_API_KEY") or "",
+                type="password",
+            )
+            openai_key = st.text_input(
+                "OpenAI API Key",
+                value=get_setting(session, "OPENAI_API_KEY") or "",
+                type="password",
+            )
+            openai_base_url = st.text_input(
+                "OpenAI Base URL",
+                value=get_setting(session, "OPENAI_BASE_URL") or "",
+            )
+            openai_model = st.text_input(
+                "OpenAI Model",
+                value=get_setting(session, "OPENAI_MODEL") or "gpt-4o-mini",
+            )
+            ollama_url = st.text_input(
+                "Ollama Base URL",
+                value=get_setting(session, "OLLAMA_BASE_URL") or "http://localhost:11434",
+            )
+            ollama_model = st.text_input(
+                "Ollama Model",
+                value=get_setting(session, "OLLAMA_MODEL") or "llama3.2",
+            )
+            limit_enabled = st.checkbox(
+                "Limit AI analysis per target",
+                value=get_setting(session, "ai_analysis_limit") is not None,
+            )
+            max_findings = st.number_input(
+                "Max findings per target",
+                min_value=1,
+                value=int(get_setting(session, "ai_analysis_limit") or 50),
+                disabled=not limit_enabled,
+            )
+            ai_save = st.form_submit_button("Save AI Settings")
+            ai_test = st.form_submit_button("Test connection")
+
+        if ai_save:
+            set_setting(session, "AI_PROVIDER", "" if ai_provider_choice == "Auto" else ai_provider_choice)
+            set_setting(session, "ANTHROPIC_API_KEY", anthropic_key)
+            set_setting(session, "OPENAI_API_KEY", openai_key)
+            set_setting(session, "OPENAI_BASE_URL", openai_base_url)
+            set_setting(session, "OPENAI_MODEL", openai_model)
+            set_setting(session, "OLLAMA_BASE_URL", ollama_url)
+            set_setting(session, "OLLAMA_MODEL", ollama_model)
+            set_setting(session, "ai_analysis_limit", str(int(max_findings)) if limit_enabled else "")
+            session.commit()
+            st.success("AI settings saved.")
+
+        if ai_test:
+            import os as _os
+            from core.analysis.provider import (
+                AnthropicProvider,
+                OllamaProvider,
+                OpenAICompatibleProvider,
+                get_provider,
+            )
+            # Build provider from current form values (not from env)
+            test_provider = None
+            choice_lower = ai_provider_choice.lower()
+            if choice_lower in ("auto", "anthropic") and anthropic_key:
+                _os.environ["ANTHROPIC_API_KEY"] = anthropic_key
+                test_provider = AnthropicProvider()
+            elif choice_lower in ("auto", "openai") and openai_key:
+                _os.environ["OPENAI_API_KEY"] = openai_key
+                _os.environ["OPENAI_BASE_URL"] = openai_base_url or "https://api.openai.com/v1"
+                _os.environ["OPENAI_MODEL"] = openai_model
+                test_provider = OpenAICompatibleProvider()
+            elif choice_lower in ("auto", "ollama"):
+                _os.environ["OLLAMA_BASE_URL"] = ollama_url
+                _os.environ["OLLAMA_MODEL"] = ollama_model
+                test_provider = OllamaProvider()
+
+            if test_provider is None:
+                st.warning("No provider configured — check API keys.")
+            elif test_provider.is_available():
+                st.success(f"Connected to {type(test_provider).__name__}.")
+            else:
+                st.error(f"{type(test_provider).__name__} is not reachable.")
+
+        st.divider()
+
+        # ------------------------------------------------------------------
+        # Recon Defaults section
+        # ------------------------------------------------------------------
+        st.subheader("Recon Defaults")
+        with st.form("recon-defaults-settings"):
+            recon_depth = st.number_input(
+                "Recon depth",
+                min_value=1,
+                max_value=3,
+                value=int(get_setting(session, "MAX_RECON_DEPTH") or 2),
+            )
+            nuclei_rate = st.number_input(
+                "Nuclei rate limit",
+                min_value=1,
+                value=int(get_setting(session, "NUCLEI_RATE_LIMIT") or 150),
+            )
+            screenshot_timeout = st.number_input(
+                "Screenshot timeout (s)",
+                min_value=5,
+                value=int(get_setting(session, "SCREENSHOT_TIMEOUT") or 30),
+            )
+            recon_concurrency = st.number_input(
+                "Recon concurrency",
+                min_value=1,
+                value=int(get_setting(session, "RECON_CONCURRENCY") or 10),
+            )
+            nuclei_cats_default = (get_setting(session, "nuclei_categories") or "").split(",")
+            nuclei_cats_default = [c for c in nuclei_cats_default if c]
+            nuclei_categories = st.multiselect(
+                "Nuclei categories",
+                ["cve", "exposure", "misconfiguration", "default-logins", "fuzzing", "takeovers", "network"],
+                default=nuclei_cats_default,
+            )
+            recon_save = st.form_submit_button("Save Recon Defaults")
+
+        if recon_save:
+            set_setting(session, "MAX_RECON_DEPTH", str(int(recon_depth)))
+            set_setting(session, "NUCLEI_RATE_LIMIT", str(int(nuclei_rate)))
+            set_setting(session, "SCREENSHOT_TIMEOUT", str(int(screenshot_timeout)))
+            set_setting(session, "RECON_CONCURRENCY", str(int(recon_concurrency)))
+            set_setting(session, "nuclei_categories", ",".join(nuclei_categories))
+            session.commit()
+            st.success("Recon defaults saved.")
+
+        st.divider()
+
+        # ------------------------------------------------------------------
+        # Notifications section
+        # ------------------------------------------------------------------
+        st.subheader("Notifications")
+        with st.form("notifications-settings"):
+            discord_url = st.text_input(
+                "Discord Webhook URL",
+                value=get_setting(session, "DISCORD_WEBHOOK_URL") or "",
+            )
+            ev_new_program = st.checkbox(
+                "New program detected",
+                value=(get_setting(session, "notify_new_program") or "false") == "true",
+            )
+            ev_recon_done = st.checkbox(
+                "Recon completed",
+                value=(get_setting(session, "notify_recon_done") or "false") == "true",
+            )
+            ev_high_score = st.checkbox(
+                "High-score finding (score ≥ 80)",
+                value=(get_setting(session, "notify_high_score_finding") or "false") == "true",
+            )
+            ev_scope_changed = st.checkbox(
+                "Scope changed",
+                value=(get_setting(session, "notify_scope_changed") or "false") == "true",
+            )
+            ev_pipeline_error = st.checkbox(
+                "Pipeline error",
+                value=(get_setting(session, "notify_pipeline_error") or "false") == "true",
+            )
+            notif_save = st.form_submit_button("Save Notification Settings")
+
+        if notif_save:
+            set_setting(session, "DISCORD_WEBHOOK_URL", discord_url)
+            set_setting(session, "notify_new_program", "true" if ev_new_program else "")
+            set_setting(session, "notify_recon_done", "true" if ev_recon_done else "")
+            set_setting(session, "notify_high_score_finding", "true" if ev_high_score else "")
+            set_setting(session, "notify_scope_changed", "true" if ev_scope_changed else "")
+            set_setting(session, "notify_pipeline_error", "true" if ev_pipeline_error else "")
+            session.commit()
+            st.success("Notification settings saved.")
+
+    except SQLAlchemyError as exc:
+        st.error(f"Database error while saving: {exc.__class__.__name__}")
+    finally:
+        session_ctx.__exit__(None, None, None)
+
+
 def render_page(page: str) -> None:
     if page == PAGE_TARGETS:
         render_targets_page()
@@ -351,7 +590,7 @@ def render_page(page: str) -> None:
     elif page == PAGE_PROGRAMS:
         render_placeholder_page(PAGE_PROGRAMS)
     elif page == PAGE_SETTINGS:
-        render_placeholder_page(PAGE_SETTINGS)
+        render_settings_page()
     else:
         st.error(f"Unknown page: {page}")
 

@@ -205,6 +205,10 @@ def get_finding(session: Session, finding_id: int) -> dict[str, object] | None:
         "target_domain": f.target.domain,
         "created_at": f.created_at,
         "reviewed_at": f.reviewed_at,
+        "classifier_used": f.classifier_used,
+        "confidence_note": f.confidence_note or "",
+        "ai_reasoning": f.ai_reasoning or "",
+        "ai_report_draft": f.ai_report_draft or "",
     }
 
 
