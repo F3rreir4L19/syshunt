@@ -17,11 +17,44 @@ and description. Return ONLY the YAML — no markdown, no code fences, no explan
 Vulnerability description:
 {description}"""
 
+_REQUIRED_HTTP_KEYS = {"requests", "http", "network"}
+
 
 def _slugify(text: str) -> str:
     text = text.lower().strip()
     text = re.sub(r"[^a-z0-9]+", "-", text)
     return text[:60].strip("-") or "generated"
+
+
+def _validate_nuclei_yaml(parsed: object) -> None:
+    """Validate that *parsed* is a well-formed nuclei template dict.
+
+    Raises ValueError with a descriptive message if any required field is missing
+    or has an invalid type.
+    """
+    if not isinstance(parsed, dict):
+        raise ValueError(f"Invalid nuclei template: root must be a YAML mapping, got {type(parsed).__name__}")
+
+    template_id = parsed.get("id")
+    if not template_id or not isinstance(template_id, str) or not template_id.strip():
+        raise ValueError("Invalid nuclei template: 'id' must be a non-empty string")
+
+    info = parsed.get("info")
+    if not isinstance(info, dict):
+        raise ValueError("Invalid nuclei template: 'info' must be a mapping")
+
+    info_name = info.get("name")
+    if not info_name or not isinstance(info_name, str) or not str(info_name).strip():
+        raise ValueError("Invalid nuclei template: 'info.name' must be a non-empty string")
+
+    info_severity = info.get("severity")
+    if not info_severity or not isinstance(info_severity, str) or not str(info_severity).strip():
+        raise ValueError("Invalid nuclei template: 'info.severity' must be a non-empty string")
+
+    if not any(k in parsed for k in _REQUIRED_HTTP_KEYS):
+        raise ValueError(
+            f"Invalid nuclei template: must contain at least one of {sorted(_REQUIRED_HTTP_KEYS)}"
+        )
 
 
 def generate_nuclei_template(description: str, provider: AIProvider) -> Path:
@@ -31,6 +64,8 @@ def generate_nuclei_template(description: str, provider: AIProvider) -> Path:
 
     Raises ValueError if the AI response is not a valid nuclei template structure.
     """
+    import yaml
+
     prompt = _PROMPT.format(description=description.strip())
     raw = provider.complete(prompt).strip()
 
@@ -39,14 +74,13 @@ def generate_nuclei_template(description: str, provider: AIProvider) -> Path:
         lines = raw.splitlines()
         raw = "\n".join(line for line in lines if not line.startswith("```")).strip()
 
-    if not raw.startswith("id:"):
-        raise ValueError(
-            f"AI response is not a valid nuclei template (must start with 'id:'): {raw[:100]!r}"
-        )
-    if "info:" not in raw:
-        raise ValueError(
-            f"AI response missing 'info:' section: {raw[:200]!r}"
-        )
+    # Parse and validate the YAML before saving
+    try:
+        parsed = yaml.safe_load(raw)
+    except yaml.YAMLError as exc:
+        raise ValueError(f"Invalid nuclei template: YAML parse error: {exc}") from exc
+
+    _validate_nuclei_yaml(parsed)
 
     _TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
     slug = _slugify(description)

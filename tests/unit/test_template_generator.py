@@ -31,9 +31,22 @@ _INVALID_YAML_NO_ID = """\
 info:
   name: Missing ID
   severity: medium
+
+requests:
+  - method: GET
+    path:
+      - /test
 """
 
 _INVALID_YAML_NO_INFO = "id: no-info-template\nsome: stuff\n"
+
+_INVALID_YAML_NO_REQUESTS = """\
+id: no-requests
+info:
+  name: No Requests
+  severity: low
+other: value
+"""
 
 
 class TestGenerateNucleiTemplate:
@@ -68,7 +81,7 @@ class TestGenerateNucleiTemplate:
         provider = MagicMock()
         provider.complete.return_value = _INVALID_YAML_NO_ID
 
-        with pytest.raises(ValueError, match="must start with 'id:'"):
+        with pytest.raises(ValueError, match="'id' must be a non-empty string"):
             generate_nuclei_template("missing id test", provider)
 
     def test_raises_value_error_when_missing_info(self, tmp_path, monkeypatch) -> None:
@@ -78,8 +91,28 @@ class TestGenerateNucleiTemplate:
         provider = MagicMock()
         provider.complete.return_value = _INVALID_YAML_NO_INFO
 
-        with pytest.raises(ValueError, match="missing 'info:'"):
+        with pytest.raises(ValueError, match="'info' must be a mapping"):
             generate_nuclei_template("missing info test", provider)
+
+    def test_raises_value_error_when_missing_requests_section(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "core.analysis.template_generator._TEMPLATES_DIR", tmp_path / "generated"
+        )
+        provider = MagicMock()
+        provider.complete.return_value = _INVALID_YAML_NO_REQUESTS
+
+        with pytest.raises(ValueError, match="must contain at least one of"):
+            generate_nuclei_template("missing requests test", provider)
+
+    def test_raises_value_error_for_invalid_yaml_syntax(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "core.analysis.template_generator._TEMPLATES_DIR", tmp_path / "generated"
+        )
+        provider = MagicMock()
+        provider.complete.return_value = "id: [\ninvalid yaml here\n"
+
+        with pytest.raises(ValueError, match="YAML parse error"):
+            generate_nuclei_template("invalid yaml test", provider)
 
     def test_strips_markdown_code_fences(self, tmp_path, monkeypatch) -> None:
         monkeypatch.setattr(

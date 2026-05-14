@@ -193,27 +193,27 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 *Objetivo: corrigir bugs críticos da Fase 3 antes de implementar monitoramento*
 
 ### Correções Críticas
-- [ ] `AIClassifier` e providers recebem API key como parâmetro direto em vez de ler `os.environ`; `get_provider(session)` aceita session e lê key do banco sem mutar env vars
-- [ ] `run_dnsx_filter`: capturar `FileNotFoundError` dentro da task e retornar skip silencioso em vez de propagar exceção que abortaria a Canvas chain
-- [ ] `classify_finding`: garantir que `finding.ai_report_draft` é atualizado quando `FindingScore.ai_report_draft` está presente
-- [ ] `run_ai_analysis`: adicionar `force_reanalyze: bool = False`; quando True, pular lookup de cache Redis antes de chamar a IA
-- [ ] Dashboard botão "Re-analyze with AI": passar `force_reanalyze=True` para `run_ai_analysis.apply_async`
-- [ ] `set_setting`: usar upsert explícito (`INSERT ... ON CONFLICT DO UPDATE` no PostgreSQL, `session.merge()` no SQLAlchemy) em vez de `session.add()`
+- [x] `AIClassifier` e providers recebem API key como parâmetro direto em vez de ler `os.environ`; `get_provider(session)` aceita session e lê key do banco sem mutar env vars
+- [x] `run_dnsx_filter`: capturar `FileNotFoundError` dentro da task e retornar skip silencioso em vez de propagar exceção que abortaria a Canvas chain
+- [x] `classify_finding`: garantir que `finding.ai_report_draft` é atualizado quando `FindingScore.ai_report_draft` está presente
+- [x] `run_ai_analysis`: adicionar `force_reanalyze: bool = False`; quando True, pular lookup de cache Redis antes de chamar a IA
+- [x] Dashboard botão "Re-analyze with AI": passar `force_reanalyze=True` para `run_ai_analysis.apply_async`
+- [x] `set_setting`: usar upsert explícito (`session.merge()` + `session.flush()` no SQLAlchemy) em vez de `session.add()`
 
 ### Modelo de Dados
-- [ ] `Target.auto_analyze` (Boolean, default True): campo no model + migration; campo no formulário "Add Target" no dashboard
-- [ ] `run_nuclei_scan`: consultar `target.auto_analyze` antes de disparar `run_ai_analysis`; se False, transitar diretamente para `recon_done` sem análise
-- [ ] `run_ai_analysis`: adicionar `ai_call_delay_seconds` configurável via `get_setting`; aplicar `time.sleep(delay)` entre cada chamada de IA
+- [x] `Target.auto_analyze` (Boolean, default True): campo no model + migration 20260513_0004; campo no formulário "Add Target" no dashboard
+- [x] `run_nuclei_scan`: consultar `target.auto_analyze` antes de disparar `run_ai_analysis`; se False, transitar diretamente para `recon_done` sem análise
+- [x] `run_ai_analysis`: adicionar `ai_call_delay_seconds` configurável via `get_setting`; aplicar `time.sleep(delay)` entre cada chamada de IA
 
 ### Qualidade e Segurança
-- [ ] `template_generator`: usar `yaml.safe_load()` + validar campos obrigatórios nuclei (`id`, `info.name`, `info.severity`, ao menos um de `requests`/`http`/`network`) antes de salvar; levantar `ValueError` com mensagem descritiva se inválido
-- [ ] `pyproject.toml`: adicionar `openai` como dependência opcional (`[openai]`); tratar `ImportError` no `OpenAICompatibleProvider.complete()` com mensagem clara
-- [ ] `Dockerfile.worker`: instalar `dnsx` via `go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest`; instalar `chromium-driver` via apt; rodar `nuclei -update-templates` no build
-- [ ] Testes: `run_ai_analysis` com `force_reanalyze=True` ignora cache; `run_ai_analysis` com `auto_analyze=False` no target não é disparado; `set_setting` com key existente não levanta IntegrityError; `run_dnsx_filter` com dnsx não instalado não aborta pipeline
+- [x] `template_generator`: usar `yaml.safe_load()` + validar campos obrigatórios nuclei (`id`, `info.name`, `info.severity`, ao menos um de `requests`/`http`/`network`) antes de salvar; levantar `ValueError` com mensagem descritiva se inválido
+- [x] `pyproject.toml`: adicionar `pyyaml>=6.0` como dependência; adicionar `openai` como dependência opcional (`[openai]`); tratar `ImportError` no `OpenAICompatibleProvider.complete()` com mensagem clara
+- [x] `Dockerfile.worker`: instalar `dnsx` via `go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest`; instalar `chromium chromium-driver` via apt; rodar `nuclei -update-templates || true` no build
+- [x] Testes: `run_ai_analysis` com `force_reanalyze=True` ignora cache; `run_ai_analysis` com `auto_analyze=False` no target não é disparado; `set_setting` com key existente não levanta IntegrityError; `run_dnsx_filter` com dnsx não instalado não aborta pipeline
 
 ### Settings Page
-- [ ] Adicionar campo "AI call delay (seconds)" na seção AI Provider (number input, min=0, max=10, default=1)
-- [ ] Adicionar campo "Auto-analyze new targets" (checkbox, default True) como setting global que pré-preenche o campo `auto_analyze` em novos targets
+- [x] Adicionar campo "AI call delay (seconds)" na seção AI Provider (number input, min=0, max=10, default=1)
+- [x] Adicionar campo "Auto-analyze new targets" (checkbox, default True) como setting global que pré-preenche o campo `auto_analyze` em novos targets
 
 
 
@@ -306,3 +306,4 @@ Funcionalidades desejáveis mas não essenciais para v1:
 | 2026-05-13 | Spec | CLAUDE.md, SPEC.md, docker-compose.yml, ROADMAP.md criados | Começar Fase 1 |
 | 2026-05-13 | 2.5 | Pipeline Canvas chain, urlparse, async recursive recon task, normalize_domain regex, check_in_scope, sha256 completo, source_tool no crawl, filename no screenshot, CSV fix, dnsx/ffuf wrappers, AIProvider, classifier_base, migration findings | — |
 | 2026-05-13 | 2.5+3 | scope validation em tasks, run_dnsx_filter, form validation, SystemSetting, migration 0003, get_setting/set_setting, AIClassifier, classifier.py com Redis cache, template_generator, run_ai_analysis, settings dashboard, AI badges/expanders, Re-analyze button | Interface dashboard para template generator (Fase 5) |
+| 2026-05-14 | 3.5 | provider.py refatorado (api_key nos construtores, get_provider(session)), classify_finding(force_reanalyze), run_dnsx_filter try/except, run_ai_analysis (force_reanalyze+delay+remove os.environ), set_setting merge+flush, Target.auto_analyze+migration 0004, run_nuclei_scan auto_analyze check, template_generator yaml.safe_load, pyproject.toml pyyaml+openai opcional, Dockerfile.worker dnsx+chromium, dashboard Re-analyze+AI delay+auto_analyze settings, 20 novos testes (234 total) | Fase 4 — Monitoramento de Plataformas |

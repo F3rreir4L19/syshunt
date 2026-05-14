@@ -43,7 +43,7 @@ def _add_findings(sf: sessionmaker[Session], target_id: int, count: int, scores:
         session.commit()
 
 
-def _noop_classify(finding, target, session) -> None:
+def _noop_classify(finding, target, session, force_reanalyze: bool = False) -> None:
     """Stub that marks findings as heuristic without calling AI."""
     finding.classifier_used = "heuristic"
     finding.auto_score = finding.auto_score or 30

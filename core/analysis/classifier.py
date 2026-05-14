@@ -75,11 +75,19 @@ def _score_to_cache(client, key: str, score: FindingScore) -> None:
         pass
 
 
-def classify_finding(finding: "Finding", target: "Target", session: "Session") -> None:
+def classify_finding(
+    finding: "Finding",
+    target: "Target",
+    session: "Session",
+    force_reanalyze: bool = False,
+) -> None:
     """Classify *finding* in-place: applies score fields and persists via *session*.
 
     Uses AIClassifier when a provider is available, with Redis-backed caching.
     Falls back to the heuristic classifier on any AI failure.
+
+    When *force_reanalyze* is True, Redis cache lookup is skipped so the AI
+    provider is always called fresh.
     """
     log = _log.bind(finding_id=finding.id, target_id=finding.target_id)
     h = _analysis_hash(finding)
@@ -88,8 +96,8 @@ def classify_finding(finding: "Finding", target: "Target", session: "Session") -
 
     score: FindingScore | None = None
 
-    # Check cache first
-    if redis is not None:
+    # Check cache first (skipped when force_reanalyze is True)
+    if redis is not None and not force_reanalyze:
         cached = _score_from_cache(redis, cache_key)
         if cached is not None:
             score = FindingScore(
@@ -105,7 +113,7 @@ def classify_finding(finding: "Finding", target: "Target", session: "Session") -
             log.info("classifier_cache_hit", classifier_used=score.classifier_used)
 
     if score is None:
-        provider = get_provider()
+        provider = get_provider(session=session)
         if provider is not None:
             try:
                 score = AIClassifier(provider).classify(finding, target)

@@ -12,6 +12,7 @@ from core.db.queries import (
     create_target,
     get_finding,
     get_pipeline_status,
+    get_setting,
     get_target_screenshot_paths,
     list_findings,
     list_targets,
@@ -100,8 +101,16 @@ def render_targets_page() -> None:
     with tab_add:
         try:
             with SessionLocal() as session:
+                auto_analyze_default = (
+                    get_setting(session, "auto_analyze_default") or "true"
+                ).lower() == "true"
+
                 with st.form("add-target", clear_on_submit=True):
                     domain = st.text_input("Domain", placeholder="example.com")
+                    auto_analyze = st.checkbox(
+                        "Auto-analyze with AI after recon",
+                        value=auto_analyze_default,
+                    )
                     submitted = st.form_submit_button("Add target")
 
                 if submitted:
@@ -114,7 +123,7 @@ def render_targets_page() -> None:
                             st.error(f"Invalid domain: {exc}")
                         else:
                             try:
-                                create_target(session, domain)
+                                create_target(session, domain, auto_analyze=auto_analyze)
                                 st.success("Target added.")
                             except ValueError as exc:
                                 st.error(str(exc))
@@ -350,7 +359,10 @@ def _render_finding_detail(finding_id: int) -> None:
     if not classifier_used or classifier_used == "heuristic":
         if st.button("Re-analyze with AI", key=f"reanalyze_{finding_id}"):
             try:
-                run_ai_analysis.apply_async(args=[int(detail["target_id"])])
+                run_ai_analysis.apply_async(
+                    args=[int(detail["target_id"])],
+                    kwargs={"force_reanalyze": True},
+                )
                 st.success("Re-analysis queued.")
             except Exception as exc:
                 st.error(f"Could not queue re-analysis: {exc}")
@@ -441,6 +453,17 @@ def render_settings_page() -> None:  # noqa: PLR0912, PLR0915
                 value=int(get_setting(session, "ai_analysis_limit") or 50),
                 disabled=not limit_enabled,
             )
+            ai_call_delay = st.number_input(
+                "AI call delay (seconds)",
+                min_value=0.0,
+                max_value=10.0,
+                value=float(get_setting(session, "ai_call_delay_seconds") or "1"),
+                step=0.5,
+            )
+            auto_analyze_default = st.checkbox(
+                "Auto-analyze new targets by default",
+                value=(get_setting(session, "auto_analyze_default") or "true").lower() == "true",
+            )
             ai_save = st.form_submit_button("Save AI Settings")
             ai_test = st.form_submit_button("Test connection")
 
@@ -453,32 +476,30 @@ def render_settings_page() -> None:  # noqa: PLR0912, PLR0915
             set_setting(session, "OLLAMA_BASE_URL", ollama_url)
             set_setting(session, "OLLAMA_MODEL", ollama_model)
             set_setting(session, "ai_analysis_limit", str(int(max_findings)) if limit_enabled else "")
+            set_setting(session, "ai_call_delay_seconds", str(ai_call_delay))
+            set_setting(session, "auto_analyze_default", "true" if auto_analyze_default else "false")
             session.commit()
             st.success("AI settings saved.")
 
         if ai_test:
-            import os as _os
             from core.analysis.provider import (
                 AnthropicProvider,
                 OllamaProvider,
                 OpenAICompatibleProvider,
-                get_provider,
             )
-            # Build provider from current form values (not from env)
+            # Build provider directly from form values — never mutate os.environ
             test_provider = None
             choice_lower = ai_provider_choice.lower()
             if choice_lower in ("auto", "anthropic") and anthropic_key:
-                _os.environ["ANTHROPIC_API_KEY"] = anthropic_key
-                test_provider = AnthropicProvider()
+                test_provider = AnthropicProvider(api_key=anthropic_key)
             elif choice_lower in ("auto", "openai") and openai_key:
-                _os.environ["OPENAI_API_KEY"] = openai_key
-                _os.environ["OPENAI_BASE_URL"] = openai_base_url or "https://api.openai.com/v1"
-                _os.environ["OPENAI_MODEL"] = openai_model
-                test_provider = OpenAICompatibleProvider()
+                test_provider = OpenAICompatibleProvider(
+                    api_key=openai_key,
+                    base_url=openai_base_url or "https://api.openai.com/v1",
+                    model=openai_model,
+                )
             elif choice_lower in ("auto", "ollama"):
-                _os.environ["OLLAMA_BASE_URL"] = ollama_url
-                _os.environ["OLLAMA_MODEL"] = ollama_model
-                test_provider = OllamaProvider()
+                test_provider = OllamaProvider(base_url=ollama_url, model=ollama_model)
 
             if test_provider is None:
                 st.warning("No provider configured — check API keys.")

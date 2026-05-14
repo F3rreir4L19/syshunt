@@ -38,12 +38,12 @@ def normalize_domain(domain: str) -> str:
     return cleaned
 
 
-def create_target(session: Session, domain: str) -> Target:
+def create_target(session: Session, domain: str, auto_analyze: bool = True) -> Target:
     normalized = normalize_domain(domain)
     if not normalized:
         raise ValueError("Domain is required.")
 
-    target = Target(domain=normalized, scope_includes=[normalized])
+    target = Target(domain=normalized, scope_includes=[normalized], auto_analyze=auto_analyze)
     session.add(target)
     session.commit()
     session.refresh(target)
@@ -274,6 +274,7 @@ def set_setting(session: Session, key: str, value: str | None) -> None:
     """Persist *value* for *key* in system_settings.
 
     Passing None or an empty string removes the entry (reverts to env var fallback).
+    Uses session.merge() so concurrent upserts never raise IntegrityError.
     """
     from datetime import UTC, datetime
 
@@ -283,12 +284,8 @@ def set_setting(session: Session, key: str, value: str | None) -> None:
             session.delete(row)
         return
 
-    row = session.get(SystemSetting, key)
-    if row is None:
-        session.add(SystemSetting(key=key, value=value, updated_at=datetime.now(UTC)))
-    else:
-        row.value = value
-        row.updated_at = datetime.now(UTC)
+    session.merge(SystemSetting(key=key, value=value, updated_at=datetime.now(UTC)))
+    session.flush()  # ensure identity map is updated so repeated calls see the same row
 
 
 def _data_hash(data: dict[str, Any]) -> str:

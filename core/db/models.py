@@ -27,6 +27,7 @@ class Target(TimestampMixin, Base):
     program_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     last_recon_at: Mapped[datetime | None] = mapped_column(nullable=True)
     recon_depth: Mapped[int] = mapped_column(Integer, default=2)
+    auto_analyze: Mapped[bool] = mapped_column(Boolean, default=True)
 
     findings: Mapped[list["Finding"]] = relationship(back_populates="target")
     recon_results: Mapped[list["ReconResult"]] = relationship(back_populates="target")

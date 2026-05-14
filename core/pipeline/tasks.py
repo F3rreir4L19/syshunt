@@ -435,11 +435,16 @@ def run_nuclei_scan(target_id: int) -> dict[str, int | str]:
 
     log.info("nuclei_scan_completed", created=len(inserted), errors=len(errors))
 
-    # Dispatch AI analysis asynchronously; non-fatal if Redis unavailable
-    try:
-        run_ai_analysis.apply_async(args=[target_id])
-    except Exception as dispatch_err:
-        log.warning("ai_analysis_dispatch_failed", error=str(dispatch_err))
+    # Dispatch AI analysis asynchronously only when auto_analyze is enabled
+    with SessionLocal() as session:
+        _target = session.get(Target, target_id)
+        auto_analyze = _target.auto_analyze if _target is not None else True
+
+    if auto_analyze:
+        try:
+            run_ai_analysis.apply_async(args=[target_id])
+        except Exception as dispatch_err:
+            log.warning("ai_analysis_dispatch_failed", error=str(dispatch_err))
 
     return {
         "target_id": target_id,
@@ -449,15 +454,20 @@ def run_nuclei_scan(target_id: int) -> dict[str, int | str]:
 
 
 @celery_app.task(name="core.pipeline.run_ai_analysis")
-def run_ai_analysis(target_id: int, limit: int | None = None) -> dict[str, Any]:
+def run_ai_analysis(target_id: int, limit: int | None = None, force_reanalyze: bool = False) -> dict[str, Any]:
     """Classify all new, unclassified findings for *target_id* using AI or heuristics.
 
     If *limit* is None, the value is read from the ``ai_analysis_limit`` system
     setting at runtime.  Only the top-*limit* findings by heuristic score are
     processed; the rest remain unclassified until the next run.
 
+    When *force_reanalyze* is True, the Redis cache is bypassed and the AI
+    provider is always called fresh.
+
     Sets target.status = "ready_for_review" when all selected findings are done.
     """
+    import time
+
     log = structlog.get_logger().bind(target_id=target_id, task="run_ai_analysis")
     from core.analysis.classifier import classify_finding
 
@@ -465,13 +475,6 @@ def run_ai_analysis(target_id: int, limit: int | None = None) -> dict[str, Any]:
         target = session.get(Target, target_id)
         if target is None:
             raise ValueError(f"Target {target_id} not found")
-
-        # Load API keys from system_settings into env so get_provider() sees them
-        for key in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL",
-                    "OLLAMA_BASE_URL", "AI_PROVIDER"):
-            val = queries.get_setting(session, key)
-            if val:
-                os.environ[key] = val
 
         # Determine effective limit: prefer explicit arg, then system_setting
         effective_limit = limit
@@ -482,6 +485,8 @@ def run_ai_analysis(target_id: int, limit: int | None = None) -> dict[str, Any]:
                     effective_limit = int(limit_str)
                 except ValueError:
                     log.warning("ai_analysis_limit_invalid", value=limit_str)
+
+        delay = float(queries.get_setting(session, "ai_call_delay_seconds") or "1")
 
         findings_query = (
             session.query(Finding)
@@ -496,8 +501,10 @@ def run_ai_analysis(target_id: int, limit: int | None = None) -> dict[str, Any]:
             findings_query = findings_query.limit(effective_limit)
         findings = findings_query.all()
 
-        for finding in findings:
-            classify_finding(finding, target, session)
+        for i, finding in enumerate(findings):
+            classify_finding(finding, target, session, force_reanalyze=force_reanalyze)
+            if delay > 0 and i < len(findings) - 1:
+                time.sleep(delay)
 
         target.status = "ready_for_review"
         session.commit()
@@ -510,73 +517,83 @@ def run_ai_analysis(target_id: int, limit: int | None = None) -> dict[str, Any]:
 def run_dnsx_filter(target_id: int) -> dict[str, int | str]:
     """Filter subdomains by DNS resolution using dnsx.
 
-    Non-fatal: if dnsx is not installed or fails, logs a warning and returns
-    without modifying the stored subdomains. Subdomains that do not resolve are
-    superseded so subsequent pipeline steps skip them.
+    Non-fatal: if dnsx is not installed or any error occurs, logs a warning and
+    returns without modifying the stored subdomains. Subdomains that do not
+    resolve are superseded so subsequent pipeline steps skip them.
     """
     log = structlog.get_logger().bind(target_id=target_id, tool="dnsx")
-    with SessionLocal() as session:
-        target = session.get(Target, target_id)
-        if target is None:
-            raise ValueError(f"Target {target_id} not found")
+    try:
+        with SessionLocal() as session:
+            target = session.get(Target, target_id)
+            if target is None:
+                raise ValueError(f"Target {target_id} not found")
 
-        active_subdomain_results = (
-            session.query(ReconResult)
-            .filter(
-                ReconResult.target_id == target.id,
-                ReconResult.result_type == "subdomain",
-                ReconResult.superseded_by.is_(None),
+            active_subdomain_results = (
+                session.query(ReconResult)
+                .filter(
+                    ReconResult.target_id == target.id,
+                    ReconResult.result_type == "subdomain",
+                    ReconResult.superseded_by.is_(None),
+                )
+                .all()
             )
-            .all()
-        )
 
-        if not active_subdomain_results:
-            log.info("dnsx_filter_skipped", reason="no_active_subdomains")
-            return {"target_id": target_id, "tool": "dnsx", "filtered": 0, "kept": 0}
+            if not active_subdomain_results:
+                log.info("dnsx_filter_skipped", reason="no_active_subdomains")
+                return {"target_id": target_id, "tool": "dnsx", "filtered": 0, "kept": 0}
 
-        all_domains = [
-            r.data["value"]
-            for r in active_subdomain_results
-            if r.data.get("value")
-        ]
-        if not all_domains:
-            return {"target_id": target_id, "tool": "dnsx", "filtered": 0, "kept": 0}
+            all_domains = [
+                r.data["value"]
+                for r in active_subdomain_results
+                if r.data.get("value")
+            ]
+            if not all_domains:
+                return {"target_id": target_id, "tool": "dnsx", "filtered": 0, "kept": 0}
 
-        result = DnsxWrapper().run("\n".join(all_domains))
-        if not result.success:
-            log.warning("dnsx_filter_failed", error=result.error)
-            return {
-                "target_id": target_id,
-                "tool": "dnsx",
-                "filtered": 0,
-                "kept": len(all_domains),
-                "skipped": True,
-            }
+            result = DnsxWrapper().run("\n".join(all_domains))
+            if not result.success:
+                log.warning("dnsx_filter_failed", error=result.error)
+                return {
+                    "target_id": target_id,
+                    "tool": "dnsx",
+                    "filtered": 0,
+                    "kept": len(all_domains),
+                    "skipped": True,
+                }
 
-        resolved_set = {h.lower() for h in result.parsed_data}
+            resolved_set = {h.lower() for h in result.parsed_data}
 
-        # Create a marker record so non-resolving results can reference it
-        marker = ReconResult(
-            target_id=target.id,
-            tool="dnsx",
-            result_type="dns_filter",
-            data={"resolved_count": len(resolved_set)},
-        )
-        session.add(marker)
-        session.flush()
+            # Create a marker record so non-resolving results can reference it
+            marker = ReconResult(
+                target_id=target.id,
+                tool="dnsx",
+                result_type="dns_filter",
+                data={"resolved_count": len(resolved_set)},
+            )
+            session.add(marker)
+            session.flush()
 
-        filtered = 0
-        for sub_result in active_subdomain_results:
-            domain = (sub_result.data.get("value") or "").lower()
-            if domain and domain not in resolved_set:
-                sub_result.superseded_by = marker.id
-                filtered += 1
+            filtered = 0
+            for sub_result in active_subdomain_results:
+                domain = (sub_result.data.get("value") or "").lower()
+                if domain and domain not in resolved_set:
+                    sub_result.superseded_by = marker.id
+                    filtered += 1
 
-        session.commit()
+            session.commit()
 
-    kept = len(all_domains) - filtered
-    log.info("dnsx_filter_completed", filtered=filtered, kept=kept)
-    return {"target_id": target_id, "tool": "dnsx", "filtered": filtered, "kept": kept}
+        kept = len(all_domains) - filtered
+        log.info("dnsx_filter_completed", filtered=filtered, kept=kept)
+        return {"target_id": target_id, "tool": "dnsx", "filtered": filtered, "kept": kept}
+
+    except ValueError:
+        raise  # propagate "Target not found" — that's a real error
+    except (FileNotFoundError, RuntimeError) as exc:
+        log.warning("dnsx_not_available", error=str(exc))
+        return {"target_id": target_id, "tool": "dnsx", "skipped": True}
+    except Exception as exc:
+        log.warning("dnsx_not_available", error=str(exc))
+        return {"target_id": target_id, "tool": "dnsx", "skipped": True}
 
 
 @celery_app.task(name="core.pipeline.run_full_pipeline")
