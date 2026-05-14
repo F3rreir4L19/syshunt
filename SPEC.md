@@ -315,7 +315,13 @@ Usuário pode pedir ao sistema para gerar um template nuclei baseado em:
 - Por template: taxa de false positive baseada em histórico de uso
 
 ### 5.5 Página: Settings
-- **API Keys**: Anthropic, HackerOne, Bugcrowd, Intigriti, Discord
+- **API Keys**: Anthropic, HackerOne, Bugcrowd, Intigriti, Discord, Etc
+
+- Checkbox "Limitar análise de IA por alvo": quando ativo, define um número máximo de
+  findings analisados por target por execução (ordenados por score heurístico DESC)
+- Quando desativado: todos os findings são analisados sem limite
+- Configuração salva no banco como `ai_analysis_limit` (null = sem limite)
+
 - **Recon Defaults**: profundidade default, concorrência, rate limits
 - **Nuclei Settings**: rate limit, templates habilitados/desabilitados
 - **Monitoring**: intervalo de polling por plataforma, enable/disable por plataforma

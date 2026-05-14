@@ -170,6 +170,9 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 - [ ] Task Celery: `run_ai_analysis(target_id)`
 - [ ] Integração no pipeline principal (etapa 8)
 - [ ] Trigger manual no dashboard para targets já reconhecidos
+- [ ] `system_settings` table e model: chave/valor para configurações persistidas no banco
+- [ ] `get_setting` / `set_setting` em `core/db/queries.py`
+- [ ] `run_ai_analysis` respeita `ai_analysis_limit` do banco; quando null processa tudo
 
 ### Geração de Report Draft
 - [ ] Prompt de geração de report para findings com score ≥ 60
