@@ -27,31 +27,40 @@ O formulário deve expor todos esses campos. Nenhum campo é obrigatório além 
 
 ### 1.2 Injeção por CSV
 Formato esperado do CSV:
+
 ```csv
 domain,scope_includes,scope_excludes,platform,program_id,recon_depth
 example.com,"*.example.com","blog.example.com",hackerone,h1-example,2
 target2.com,"","staging.*",bugcrowd,bc-target2,1
 ```
+
 - Colunas obrigatórias: `domain`
 - Colunas opcionais: todas as demais com defaults
 - Validação linha a linha com relatório de erros antes de importar
 - Importação em batch com confirmação do usuário
 
 ### 1.3 Estados de um Alvo
-```
+
+```text
 pending → recon_running → recon_done → analysis_running → ready_for_review → archived
 ```
-- pending → recon_running → recon_done → analysis_running → ready_for_review → archived
-- `recon_running`: pipeline de recon em execução (com etapa atual visível)
-- `recon_done`: recon concluído, aguardando análise
+
+- `pending`: alvo registrado, ainda sem execução.
+- `recon_running`: pipeline de recon em execução.
+- `recon_done`: recon concluído, aguardando análise.
 - `analysis_running`: análise heurística/IA em execução; deve ser setado imediatamente no início de `run_ai_analysis`.
-- `ready_for_review`: tudo concluído, findings aguardando revisão do pesquisador
-- `archived`: alvo inativo
+- `ready_for_review`: tudo concluído, findings aguardando revisão do pesquisador.
+- `archived`: alvo inativo.
+
+Estados planejados para resiliência:
+
+- `recon_failed`: falha crítica no pipeline de recon.
+- `analysis_failed`: falha crítica na análise.
 
 ### 1.4 Re-scan
-- Usuário pode solicitar re-scan a qualquer momento
-- Re-scan preserva histórico anterior (resultados marcados como `superseded`)
-- Re-scan incremental: opção de rodar só nuclei sem refazer o recon completo
+- Usuário pode solicitar re-scan a qualquer momento.
+- Re-scan preserva histórico anterior (resultados marcados como `superseded`).
+- Re-scan incremental: opção de rodar só nuclei sem refazer o recon completo.
 
 ### 1.5 Controles de pipeline no dashboard
 
@@ -68,71 +77,99 @@ Na lista de targets:
 ## 2. PIPELINE DE RECON
 
 ### 2.1 Etapa 1: Enumeração de Subdomínios
+
 **Ferramentas**: subfinder, amass (passive mode)
+
 **Input**: domínio raiz
+
 **Output**: lista de subdomínios únicos
+
 **Comportamento**:
-- Roda subfinder e amass em paralelo
-- Deduplica resultados
-- Salva todos no banco como `recon_results` (tipo: `subdomain`)
-- Inclui fonte (subfinder/amass/ambos) para cada subdomínio
+- Roda subfinder e amass em paralelo.
+- Deduplica resultados.
+- Salva todos no banco como `recon_results` (tipo: `subdomain`).
+- Inclui fonte (subfinder/amass/ambos) para cada subdomínio.
 
 ### 2.2 Etapa 2: HTTP Probe
+
 **Ferramenta**: httpx
+
 **Input**: lista de subdomínios
+
 **Output**: hosts ativos com metadados HTTP
+
 **Comportamento**:
-- Detecta HTTP e HTTPS
-- Captura: status code, título da página, tecnologias (via headers), redirect chain
-- Filtra apenas hosts que respondem (200, 301, 302, 403, 401, 500)
-- Marca como `interesting` hosts com 401/403 (potencial bypass)
+- Detecta HTTP e HTTPS.
+- Captura: status code, título da página, tecnologias (via headers), redirect chain.
+- Filtra apenas hosts que respondem (200, 301, 302, 403, 401, 500).
+- Marca como `interesting` hosts com 401/403 (potencial bypass).
 
 ### 2.3 Etapa 3: Port Scan
+
 **Ferramenta**: nmap
+
 **Input**: IPs dos hosts ativos
+
 **Output**: portas abertas e serviços
+
 **Comportamento**:
-- Scan nas top-1000 portas (configurável)
-- Detecta serviços e versões nas portas abertas
-- Foca em portas não-padrão (não-80/443) como pontos de interesse
-- Salva fingerprint de serviço para análise posterior
+- Scan nas top-1000 portas (configurável).
+- Detecta serviços e versões nas portas abertas.
+- Foca em portas não-padrão (não-80/443) como pontos de interesse.
+- Salva fingerprint de serviço para análise posterior.
 
 ### 2.4 Etapa 4: Web Crawling
+
 **Ferramentas**: katana, gau
+
 **Input**: URLs ativas (HTTP 200)
+
 **Output**: URLs coletadas, endpoints, parâmetros
+
 **Comportamento**:
-- katana: crawling ativo (segue links, extrai JS)
-- gau: coleta histórica (Wayback Machine + CommonCrawl)
-- Deduplica URLs por path (ignora variações de query string similares)
-- Extrai e salva: forms, endpoints de API, parâmetros GET/POST, caminhos interessantes
+- katana: crawling ativo (segue links, extrai JS).
+- gau: coleta histórica (Wayback Machine + CommonCrawl).
+- Deduplica URLs por path (ignora variações de query string similares).
+- Extrai e salva: forms, endpoints de API, parâmetros GET/POST, caminhos interessantes.
 
 ### 2.5 Etapa 5: Screenshots
+
 **Ferramenta**: gowitness
+
 O Dockerfile instala `gowitness@latest` que é v3+. O wrapper usa a sintaxe v3:
 
+```bash
 gowitness scan single --url https://example.com --screenshot-path /path
+```
 
-filename armazenado no ReconResult pode ser null; dashboard e consumidores devem tolerar isso.
+`filename` armazenado no ReconResult pode ser null; dashboard e consumidores devem tolerar isso.
 
 **Input**: URLs ativas
+
 **Output**: screenshots + hashes para deduplicação
+
 **Comportamento**:
-- Captura screenshot de cada host ativo
-- Armazena path do arquivo no banco
-- Exibe no dashboard na aba do alvo
+- Captura screenshot de cada host ativo.
+- Armazena path do arquivo no banco.
+- Exibe no dashboard na aba do alvo.
 
 ### 2.6 Etapa 6: Vulnerability Scan
+
 **Ferramenta**: nuclei
+
 **Input**: URLs e hosts coletados
+
 **Output**: findings brutos
+
 **Comportamento**:
-- Roda templates: `cves`, `exposures`, `misconfiguration`, `technologies`, `vulnerabilities`
-- Inclui templates customizados do usuário
-- Rate limiting configurável (default: 150 req/s)
-- Cada achado do nuclei vira um `finding` no banco com status `new`
-- Salva output raw + parsed
+- Roda templates: `cves`, `exposures`, `misconfiguration`, `technologies`, `vulnerabilities`.
+- Inclui templates customizados do usuário.
+- Rate limiting configurável (default: 150 req/s).
+- Cada achado do nuclei vira um `finding` no banco com status `new`.
+- Salva output raw + parsed.
+
 #### Deduplicação de Findings
+
 Antes de criar um Finding a partir de output do nuclei, o sistema deve verificar se já existe finding com:
 
 - mesmo `target_id`;
@@ -144,22 +181,20 @@ Findings não são deletados automaticamente em re-scan.
 
 ### 2.7 Recon Recursivo
 - Para cada novo subdomínio encontrado em etapas anteriores que não estava na lista original:
-  - Se `recon_depth > 1`: rodar etapas 1-5 nesse subdomínio também
-  - Decrementa profundidade a cada nível
-  - Evita loops (tracking de domínios já processados na sessão)
-  - Status do target durante todo o pipeline recursivo permanece `recon_running`; só transita para `recon_done` quando todas as profundidades estiverem completas
-
+  - Se `recon_depth > 1`: rodar etapas 1-5 nesse subdomínio também.
+  - Decrementa profundidade a cada nível.
+  - Evita loops (tracking de domínios já processados na sessão).
+  - Status do target durante todo o pipeline recursivo permanece `recon_running`; só transita para `recon_done` quando todas as profundidades estiverem completas.
 
 ### 2.8 Re-scan e Deduplicação
-- Re-scan marca todos os `ReconResult` anteriores do target com `superseded_by = <novo_recon_result_id>` antes de inserir novos resultados
-- Findings existentes **não** são deletados nem superseded; o re-scan pode gerar findings adicionais, nunca remover os anteriores
-- Deduplicação de subdomínios é feita antes de persistir: se o mesmo valor já existe como `ReconResult` ativo (sem `superseded_by`) para o target, não insere duplicata
-- Falhas individuais de ferramenta durante loop (ex: um subdomínio de 50 dando timeout) são logadas como `structlog.warning` com contexto `{target_id, tool, failed_item}` mas não abortam a task; a task só falha se *todos* os itens falharem
-
+- Re-scan marca todos os `ReconResult` anteriores do target com `superseded_by = <novo_recon_result_id>` antes de inserir novos resultados.
+- Findings existentes **não** são deletados nem superseded; o re-scan pode gerar findings adicionais, nunca remover os anteriores.
+- Deduplicação de subdomínios é feita antes de persistir: se o mesmo valor já existe como `ReconResult` ativo (sem `superseded_by`) para o target, não insere duplicata.
+- Falhas individuais de ferramenta durante loop (ex: um subdomínio de 50 dando timeout) são logadas como `structlog.warning` com contexto `{target_id, tool, failed_item}` mas não abortam a task; a task só falha se *todos* os itens falharem.
 
 ### 2.9 Contrato de retorno do DNS filter
 
-`run_dnsx_filter` sempre retorna:
+`run_dnsx_filter` sempre retorna o mesmo formato:
 
 ```json
 {
@@ -169,9 +204,11 @@ Findings não são deletados automaticamente em re-scan.
   "kept": 0,
   "skipped": false
 }
+```
 
 Em qualquer falha não-fatal:
 
+```json
 {
   "target_id": 123,
   "tool": "dnsx",
@@ -179,8 +216,9 @@ Em qualquer falha não-fatal:
   "kept": 0,
   "skipped": true
 }
+```
 
-ValueError para target inexistente continua propagando.
+`ValueError` para target inexistente continua propagando.
 
 ---
 
@@ -188,9 +226,7 @@ ValueError para target inexistente continua propagando.
 
 ### 3.0 Classificação Heurística (Baseline)
 
-O sistema possui um classificador heurístico que opera **sem dependência de IA**,
-sempre disponível como baseline. Quando nenhum provider de IA está configurado ou
-disponível, todos os findings são classificados por este sistema.
+O sistema possui um classificador heurístico que opera **sem dependência de IA**, sempre disponível como baseline. Quando nenhum provider de IA está configurado ou disponível, todos os findings são classificados por este sistema.
 
 **Critérios de score (soma máxima = 80 antes da penalização):**
 
@@ -219,18 +255,14 @@ disponível, todos os findings são classificados por este sistema.
 
 ### 3.1 Scoring por IA (Enhancement)
 
-Quando um provider de IA está configurado e disponível, o classificador heurístico
-é substituído pela análise contextual via LLM. O score heurístico não é usado como
-input para a IA — a IA recebe os dados brutos e produz seu próprio score independente.
+Quando um provider de IA está configurado e disponível, o classificador heurístico é substituído pela análise contextual via LLM. O score heurístico não é usado como input para a IA — a IA recebe os dados brutos e produz seu próprio score independente.
 
 **Providers suportados:**
 - **Anthropic Claude** — padrão quando `ANTHROPIC_API_KEY` presente
 - **OpenAI-compatible** — qualquer endpoint compatível (OpenAI, Groq, Together, etc.) via `OPENAI_API_KEY` + `OPENAI_BASE_URL`
 - **Ollama** — modelos locais via `OLLAMA_BASE_URL` + `OLLAMA_MODEL`
 
-Seleção automática: `AI_PROVIDER` env var; se ausente, detecta pelo primeiro API key presente
-na ordem: Anthropic → OpenAI → Ollama. Se nenhum estiver disponível, o sistema cai
-automaticamente no classificador heurístico da seção 3.0 com log de warning.
+Seleção automática: `AI_PROVIDER` env var; se ausente, detecta pelo primeiro API key presente na ordem: Anthropic → OpenAI → Ollama. Se nenhum estiver disponível, o sistema cai automaticamente no classificador heurístico da seção 3.0 com log de warning.
 
 **Input enviado para a IA (por finding):**
 - Tipo de vulnerabilidade detectada
@@ -240,6 +272,7 @@ automaticamente no classificador heurístico da seção 3.0 com log de warning.
 - Template nuclei que gerou o finding (ID + categoria)
 
 **Formato de resposta esperado (JSON estrito):**
+
 ```json
 {
   "score": 75,
@@ -276,8 +309,7 @@ Valores válidos por campo:
 - Timeout ou erro de API → logar `structlog.warning` com provider e erro
 - Fallback automático para classificador heurístico da seção 3.0
 - `classifier_used` registra `"heuristic"` mesmo que o provider estivesse configurado
-- Finding não fica bloqueado aguardando retry da IA; retry pode ser disparado manualmente
-  pelo pesquisador no dashboard
+- Finding não fica bloqueado aguardando retry da IA; retry pode ser disparado manualmente pelo pesquisador no dashboard
 
 ### 3.2 Geração de Relatório Draft
 Para findings com score ≥ 60, Claude gera um draft de report no formato padrão HackerOne/Bugcrowd:
@@ -294,7 +326,7 @@ Usuário pode pedir ao sistema para gerar um template nuclei baseado em:
 - Exemplo de request/response de uma vuln encontrada manualmente
 - Padrão de um finding existente para generalizar
 
-### Execução no pipeline
+### 3.4 Execução no pipeline
 
 `run_ai_analysis` deve:
 
@@ -306,6 +338,7 @@ Usuário pode pedir ao sistema para gerar um template nuclei baseado em:
 6. disparar notificações configuradas.
 
 Quando `force_reanalyze=True`, findings já classificados também devem ser elegíveis para reprocessamento.
+
 ---
 
 ## 4. MONITORAMENTO DE PLATAFORMAS
@@ -349,12 +382,8 @@ Quando `force_reanalyze=True`, findings já classificados também devem ser eleg
 - Por alvo: botão "Re-scan", "View Findings", "Archive"
 - Status com indicador visual (cor + ícone)
 - Filtros: por status, por plataforma, por data
-- status;
-- plataforma;
-- profundidade;
-- última execução;
-- botões Start Recon e Re-scan rápido;
-- screenshots quando existirem.
+- Botões Start Recon e Re-scan rápido
+- Screenshots quando existirem
 
 Cores/status sugeridos:
 
@@ -364,6 +393,8 @@ Cores/status sugeridos:
 - analysis_running: laranja
 - ready_for_review: verde
 - archived: cinza escuro
+- recon_failed: vermelho
+- analysis_failed: vermelho
 
 ### 5.2 Página: Findings
 - Tabela principal com todos os achados
@@ -382,11 +413,19 @@ Cores/status sugeridos:
   - Draft de report
   - Botões de ação: "Mark Valid", "Mark False Positive", "Export Report"
 - Agrupamento por alvo ou por tipo (toggle)
-- paginação, default 100 itens por página;
-- filtros por target, severidade, status, score e busca textual;
-- export CSV;
-- export Markdown;
-- detalhe com raw evidence, AI reasoning e report draft.
+- Paginação, default 100 itens por página
+- Filtros por target, severidade, status, score e busca textual
+- Export CSV
+- Export Markdown
+- Detalhe com raw evidence, AI reasoning e report draft
+
+Findings deve usar paginação no banco:
+- `limit`;
+- `offset`;
+- contagem total separada;
+- default 100 itens por página.
+
+Não usar `query.all()` seguido de slice em memória para volumes grandes.
 
 ### 5.3 Página: Programs
 - Lista de programas monitorados por plataforma
@@ -405,13 +444,10 @@ Cores/status sugeridos:
 - Por template: taxa de false positive baseada em histórico de uso
 
 ### 5.5 Página: Settings
-- **API Keys**: Anthropic, HackerOne, Bugcrowd, Intigriti, Discord, Etc
-
-- Checkbox "Limitar análise de IA por alvo": quando ativo, define um número máximo de
-  findings analisados por target por execução (ordenados por score heurístico DESC)
+- **API Keys**: Anthropic, HackerOne, Bugcrowd, Intigriti, Discord, etc.
+- Checkbox "Limitar análise de IA por alvo": quando ativo, define um número máximo de findings analisados por target por execução (ordenados por score heurístico DESC)
 - Quando desativado: todos os findings são analisados sem limite
 - Configuração salva no banco como `ai_analysis_limit` (null = sem limite)
-
 - **Recon Defaults**: profundidade default, concorrência, rate limits
 - **Nuclei Settings**: rate limit, templates habilitados/desabilitados
 - **Monitoring**: intervalo de polling por plataforma, enable/disable por plataforma
@@ -422,26 +458,7 @@ Cores/status sugeridos:
 
 ## 6. NOTIFICAÇÕES
 
-Eventos que geram notificação Discord:
-- Novo programa detectado em plataforma monitorada
-- Recon concluído em alvo
-- Finding com score ≥ 80 encontrado
-- Mudança de escopo em programa ativo
-- Erro crítico em pipeline
-
-Formato da mensagem Discord:
-```
-🔴 [HIGH CONFIDENCE FINDING]
-Target: api.example.com
-Type: SQL Injection
-Score: 87/100
-URL: https://api.example.com/users?id=1
-→ View in Dashboard: http://localhost:8501/findings?id=xxx
-```
-
-## NOTIFICAÇÕES
-
-### Discord Webhook
+### 6.1 Discord Webhook
 
 Módulo: `core/notifications.py`.
 
@@ -454,13 +471,13 @@ Regras:
 
 Eventos:
 
-| Evento | Trigger | Flag |
+| Evento | Trigger | Status |
 |---|---|---|
-| `recon_completed` | Fim de `run_ai_analysis` | `notify_recon_done` |
-| `high_score_finding` | Finding com score >= 80 | `notify_high_score_finding` |
-| `new_program` | Futuro scheduler da Fase 4 | `notify_new_program` |
-| `scope_changed` | Futuro scheduler da Fase 4 | `notify_scope_changed` |
-| `pipeline_error` | Erro crítico de task | `notify_pipeline_error` |
+| `recon_completed` | Fim de `run_ai_analysis` | Implementado |
+| `high_score_finding` | Finding com score >= 80 | Implementado |
+| `new_program` | Scheduler detecta novo programa | Stub/Fase 4 |
+| `scope_changed` | Scheduler detecta mudança de escopo | Stub/Fase 4 |
+| `pipeline_error` | Erro crítico de task | Stub/Fase 3.8/Fase 4 |
 
 Formato mínimo de `recon_completed`:
 
@@ -470,15 +487,19 @@ Target: example.com
 Findings: 12
 High/Critical: 3
 Dashboard: http://localhost:8501
+```
 
-Formato mínimo de high_score_finding:
+Formato mínimo de `high_score_finding`:
 
+```text
 🔴 [HIGH SCORE FINDING]
 Target: api.example.com
 Type: exposed-panel
 Score: 87/100
 Severity: HIGH
 URL: https://api.example.com/admin
+```
+
 ---
 
 ## 7. SEGURANÇA DO PRÓPRIO SISTEMA
@@ -489,7 +510,8 @@ URL: https://api.example.com/admin
 - Outputs de ferramentas em diretório isolado com permissões restritas
 - Dashboard sem autenticação por padrão (uso local) — mas com opção de senha via env var
 - Rate limiting nas chamadas à Claude API para evitar custos inesperados
-### Autenticação do Dashboard
+
+### 7.1 Autenticação do Dashboard
 
 - Se `DASHBOARD_PASSWORD` estiver vazio:
   - permitir acesso;
@@ -500,14 +522,14 @@ URL: https://api.example.com/admin
 
 Em VPS, `DASHBOARD_PASSWORD` é obrigatório.
 
-### Secrets
+### 7.2 Secrets
 
 API keys em `system_settings` são plaintext no estado atual.
 Para uso local pessoal, isso é aceitável temporariamente.
 Para VPS, preferir variáveis de ambiente.
 Criptografia de settings sensíveis é backlog futuro.
 
-### Serviços expostos
+### 7.3 Serviços expostos
 
 Em VPS:
 - não expor Postgres publicamente;
@@ -515,46 +537,65 @@ Em VPS:
 - não expor Flower publicamente sem proteção;
 - preferir Tailscale, SSH tunnel, Cloudflare Access ou proxy autenticado.
 
+### 7.4 Targets locais/privados
+
+Por padrão, `ALLOW_LOCAL_TARGETS=false`.
+
+Quando falso, o sistema rejeita:
+- localhost;
+- 127.0.0.0/8;
+- ::1;
+- 10.0.0.0/8;
+- 172.16.0.0/12;
+- 192.168.0.0/16;
+- link-local;
+- domínios `.local`.
+
+Esses targets só podem ser aceitos quando `ALLOW_LOCAL_TARGETS=true`.
+
 ---
 
+## 8. DEPLOYMENT
 
-### 7.1 Deployment
+### 8.1 Modo notebook (uso ocasional)
 
-**Modo notebook (uso ocasional):**
-- Executar `make up` para subir PostgreSQL e Redis via Docker
-- Executar `make migrate` para migrar as tabelas
-- Executar `make worker` e `make dashboard` em terminais separados
-- Adequado para rodar recon manual em targets específicos
-- acessar http://localhost:8501
+- Executar `make up` para subir PostgreSQL e Redis via Docker.
+- Executar `make migrate` para migrar as tabelas.
+- Executar `make worker` e `make dashboard` em terminais separados.
+- Adequado para rodar recon manual em targets específicos.
+- Acessar http://localhost:8501.
 
-**Modo VPS (uso contínuo e monitoramento):**
-Pré-requisitos:
+### 8.2 Modo local
 
-DASHBOARD_PASSWORD definido.
-Volumes persistentes para banco e output.
-Redis/Postgres/Flower não expostos publicamente.
-Acesso via VPN, SSH tunnel ou proxy autenticado.
+Pode usar `docker-compose.local.yml` ou binds em `127.0.0.1`.
 
+### 8.3 Modo VPS
+
+Requisitos:
+- `DASHBOARD_PASSWORD` obrigatório;
+- Postgres sem porta pública;
+- Redis sem porta pública;
+- Flower sem porta pública ou protegido;
+- acesso por Tailscale, SSH tunnel, Cloudflare Access ou proxy autenticado.
+
+Exemplo:
+
+```bash
 cp .env.example .env
 # editar DB_PASSWORD, DASHBOARD_PASSWORD e API keys
-
-- Executar `make up-all` para subir todos os serviços via Docker Compose
-- Worker com `concurrency=4` adequado para VPS 2 vCPU / 4GB RAM
-- Configurar `OUTPUT_DIR` como volume persistente fora do container
-- Flower disponível em `:5555` para monitoramento de filas
-- Recomendado para monitoramento contínuo de plataformas (Fase 4)
-
+make up-all
 docker compose exec worker alembic upgrade head
+```
 
-**Pré-requisitos para pipeline completo:**
+### 8.4 Pré-requisitos para pipeline completo
 - `dnsx` instalado no worker (go install)
 - `chromium` instalado no worker (gowitness depende)
 - Templates nuclei atualizados (`nuclei -update-templates`)
 - Sem esses pré-requisitos, etapas correspondentes falham silenciosamente (não-fatal)
 
+---
 
-
-## 8. MÉTRICAS E HISTÓRICO
+## 9. MÉTRICAS E HISTÓRICO
 
 Sistema mantém:
 - Tempo médio de recon por alvo

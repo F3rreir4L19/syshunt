@@ -21,35 +21,44 @@ O pesquisador fica com as partes que exigem criatividade, contexto e profundidad
 
 ---
 
----
+## ESTADO ATUAL REAL — pós Fase 3.7
 
-## ESTADO ATUAL REAL — pós Fase 3.5
-
-O Syshunt já passou das fases 1, 1.5, 2, 2.5, 3 e 3.5.
+O Syshunt concluiu as fases 1, 1.5, 2, 2.5, 3, 3.5, 3.6 e 3.7.
 
 Implementado:
 - Docker/Compose para db, redis, worker, beat, flower e dashboard.
 - Models SQLAlchemy: Target, Finding, ReconResult, SystemSetting, BountyProgram.
-- Pipeline Celery: subfinder → dnsx → httpx → nmap → webcrawl → screenshot → nuclei.
+- Pipeline Celery: subfinder → dnsx → httpx → nmap → webcrawl → screenshot → nuclei → análise.
 - Classificação heurística sempre disponível.
 - Classificação por IA via Anthropic, OpenAI-compatible e Ollama.
 - Cache Redis de análise.
+- Dashboard Streamlit com autenticação via DASHBOARD_PASSWORD.
+- Add Target com scope_includes, scope_excludes, platform, program_id, recon_depth e auto_analyze.
+- Start Recon e Re-scan rápido pela UI.
+- Status analysis_running.
+- Re-análise individual de Finding via run_ai_analysis_for_finding.
+- Deduplicação app-level de Finding por target_id/template_id/url.
+- Export CSV/Markdown.
+- Notificações Discord para recon_completed e high_score_finding.
 - Dashboard Streamlit com Targets, Import CSV, Findings e Settings.
 - Geração backend de templates nuclei por IA.
+- README operacional em UTF-8.
 
 Ainda incompleto:
-- Dashboard não tem autenticação efetiva via DASHBOARD_PASSWORD.
-- Dashboard ainda não dispara Start Recon/Re-scan pela UI.
-- Add Target ainda não expõe scope_includes, scope_excludes, platform, program_id e recon_depth.
-- Página Programs é placeholder.
+- Página Programs ainda é placeholder.
 - Integrações HackerOne/Bugcrowd/Intigriti ainda não existem.
-- Notificações Discord ainda não existem.
+- Notificações new_program/scope_changed/pipeline_error ainda são stubs.
 - Página Templates ainda não existe.
-- Export CSV/Markdown de findings ainda não existe.
-- API keys salvas em system_settings ficam em plaintext; para VPS, preferir env vars.
-- README.md precisa ser reconstruído em UTF-8 e documentar uso real.
+- Paginação de Findings ainda precisa ser feita no banco, não em memória.
+- Provider/Redis ainda são resolvidos dentro de classify_finding; deve ser otimizado para uma vez por análise.
+- docker-compose ainda expõe Postgres/Redis/Flower/Dashboard em todas as interfaces.
+- SPEC.md precisa ser saneado para remover blocos quebrados e duplicações.
+- API keys em system_settings ainda ficam em plaintext.
+- ALLOW_LOCAL_TARGETS está documentado, mas precisa ser implementado.
 
-Regra: não reimplementar fases já concluídas. A fase ativa antes da Fase 4 é a Fase 3.6/3.7.
+Fase ativa antes da Fase 4: Fase 3.8 — Auditoria pós-3.7 e preparação real para monitoramento de plataformas.
+
+---
 
 ## ARQUITETURA DO SISTEMA
 
@@ -83,7 +92,7 @@ bughunter/
 │   │   ├── intigriti.py       ← Intigriti API
 │   │   └── scheduler.py       ← scheduler de polling
 │   │
-│   ├── notifications/        ← Discord webhook e eventos fire-and-forget
+│   ├── notifications.py       ← Discord webhook e eventos fire-and-forget
 │   ├── pipeline/              ← orquestração de workflows
 │   │   ├── tasks.py           ← Celery tasks
 │   │   ├── workflow.py        ← fluxos de execução
@@ -134,6 +143,8 @@ bughunter/
 - Sessões SQLAlchemy no Streamlit devem usar `with SessionLocal() as session:` em escopo estreito por operação.
 - Evitar manter uma sessão aberta durante toda a renderização de uma página Streamlit.
 - Listas que podem crescer, especialmente Findings, devem ter paginação.
+- Paginação deve ser feita no banco com `LIMIT/OFFSET`; evitar `query.all()` seguido de slice em memória para listas grandes.
+- Settings Page deve evitar sessão SQLAlchemy longa. Preferir funções pequenas com `with SessionLocal()`.
 - Targets devem ter ações visíveis:
   - Start Recon
   - Re-scan rápido / nuclei only
@@ -188,14 +199,16 @@ bughunter/
 - Tasks longas divididas em sub-tasks encadeadas
 - Retry com backoff exponencial em falhas de rede
 - Resultados de recon nunca deletados, apenas marcados como superseded
-- Tasks devem ser testáveis em modo eager (`CELERY_TASK_ALWAYS_EAGER=true`) sem Redis
-  ativo; em runtime, Redis continua sendo o broker/result backend padrão.
+- Tasks devem ser testáveis em modo eager (`CELERY_TASK_ALWAYS_EAGER=true`) sem Redis ativo; em runtime, Redis continua sendo o broker/result backend padrão.
 - `run_ai_analysis` deve setar `target.status = "analysis_running"` imediatamente ao iniciar e commitar antes de processar findings.
 - `run_ai_analysis(force_reanalyze=True)` deve reprocessar findings já classificados; `force_reanalyze` não deve apenas pular cache.
 - `get_provider(session)` não deve ser chamado dentro do loop de cada finding. Resolver provider uma vez por execução de `run_ai_analysis`.
 - `_get_redis()` também deve ser resolvido uma vez por execução de análise quando possível.
-- `run_dnsx_filter` deve retornar contrato consistente em todos os caminhos:
-  `{target_id, tool, filtered, kept, skipped}`.
+- `classify_finding()` deve aceitar provider/redis_client opcionais para evitar resolver provider/cache por finding.
+- `run_ai_analysis()` deve resolver provider/cache uma vez por execução e repassar ao classificador.
+- Tasks que colocam Target em estado running devem tratar exceções e evitar status preso para sempre.
+- Estados de falha (`recon_failed`, `analysis_failed`) devem ser considerados antes da Fase 4.
+- `run_dnsx_filter` deve retornar contrato consistente em todos os caminhos: `{target_id, tool, filtered, kept, skipped}`.
 - Falhas de notificação Discord nunca propagam; são fire-and-forget com `structlog.warning`.
 
 ### Wrappers de Ferramentas
@@ -208,6 +221,13 @@ bughunter/
 - GoWitnessWrapper deve ser compatível com a versão instalada no Dockerfile.worker.
 - Se usar gowitness latest, testar a sintaxe real no container. Preferir fixar versão ou ajustar o comando para `gowitness scan single --url ... --screenshot-path ...` caso a versão instalada seja v3+.
 - `filename` no ReconResult de screenshot pode ser `None`; consumidores devem tolerar isso.
+
+### Deploy / Docker
+- `docker-compose.yml` base não deve expor Postgres/Redis/Flower publicamente.
+- Para desenvolvimento local, usar `docker-compose.local.yml` ou binds em `127.0.0.1`.
+- Em VPS, dashboard deve ser acessado por Tailscale, SSH tunnel, Cloudflare Access ou proxy autenticado.
+- Ferramentas Go no Dockerfile devem ter versões fixadas; evitar `@latest` em produção.
+
 ---
 
 ## MODELOS DE DADOS PRINCIPAIS
@@ -242,7 +262,6 @@ auto_recon_enabled, last_checked_at, first_seen_at
 
 ---
 
-
 ## SISTEMA DE CLASSIFICAÇÃO DE FINDINGS
 
 O sistema opera em dois modos, selecionados automaticamente:
@@ -273,7 +292,7 @@ OPENAI_BASE_URL=...  # para qualquer API OpenAI-compatible
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=llama3.2
 
-
+---
 
 ## SCORING DE FINDINGS
 
@@ -350,48 +369,30 @@ Quando o Codex/Claude Code trabalhar neste projeto:
 8. **Segurança primeiro**: inputs de usuário (targets, templates) sempre sanitizados antes de passar para subprocess
 9. **Logs estruturados**: usar `structlog` com contexto (target_id, task_id, tool)
 10. **Atualize este arquivo** quando uma decisão arquitetural for tomada
-11. Nunca iniciar Fase 4 enquanto Fase 3.7 não estiver concluída.
+11. Nunca iniciar Fase 4 enquanto Fase 3.8 não estiver concluída.
 12. Nunca expor dashboard sem DASHBOARD_PASSWORD em VPS.
 13. Nunca expor Redis/Postgres/Flower publicamente por padrão.
 14. Nunca inserir Finding sem checar duplicata por `(target_id, template_id, url)`.
 15. Nunca chamar provider detection dentro do loop de cada finding.
 16. Nunca quebrar o contrato de retorno de tasks; retornos devem ter shape estável.
 17. Se um item for apenas documentação de dívida conhecida, não transformar em grande refactor sem aprovação.
+18. Antes de implementar Fase 4, validar o pipeline real em `docs/current_pipeline.md`.
+
 ---
 
 ## FASES DE DESENVOLVIMENTO
 
-### Fase 1 — Core + Pipeline Básico
-- [ ] Setup do projeto (docker-compose, db, celery, redis)
-- [ ] Modelos de dados + migrations iniciais
-- [ ] Wrappers: subfinder, httpx, nuclei
-- [ ] Pipeline básico: ingestion → subdomain → probe → nuclei
-- [ ] Dashboard mínimo: injetar alvo, ver status, ver findings
-
-### Fase 2 — Recon Completo
-- [ ] Wrappers: amass, nmap, katana, gau, gowitness
-- [ ] Recon recursivo (subdomínios de subdomínios até profundidade N)
-- [ ] Screenshots no dashboard
-- [ ] Filtros e deduplicação de findings
-
-### Fase 3 — Análise por IA
-- [ ] Integração Claude API para scoring contextual
-- [ ] Classificação automática de findings
-- [ ] Geração de templates nuclei via IA
-- [ ] Relatório draft automático por finding
-
-### Fase 4 — Monitoramento de Plataformas
-- [ ] HackerOne API integration
-- [ ] Bugcrowd API integration
-- [ ] Scheduler de polling
-- [ ] Notificações (Discord webhook)
-
-### Fase 5 — Dashboard Completo
-- [ ] Import CSV de alvos
-- [ ] Gestão completa de templates
-- [ ] Filtros avançados de findings
-- [ ] Métricas e histórico
-- [ ] Export para formato de report
+### Fase 1 ✅ — Core + Pipeline Básico
+### Fase 1.5 ✅ — Correções Estruturais
+### Fase 2 ✅ — Recon Completo
+### Fase 2.5 ✅ — Correções e Fundação para IA
+### Fase 3 ✅ — Análise por IA
+### Fase 3.5 ✅ — Hardening IA/providers/settings
+### Fase 3.6 ✅ — Sincronização de docs e contratos
+### Fase 3.7 ✅ — Operabilidade real + hardening mínimo
+### Fase 3.8 🔧 — Auditoria pós-3.7 e preparação para Fase 4
+### Fase 4 ⏳ — Monitoramento de Plataformas
+### Fase 5 ⏳ — Dashboard Completo e Polish
 
 ---
 
@@ -400,12 +401,21 @@ Quando o Codex/Claude Code trabalhar neste projeto:
 ```env
 # Database
 DATABASE_URL=postgresql://user:pass@localhost:5432/bughunter
+DB_PASSWORD=bughunter_dev
 
 # Redis / Celery
 REDIS_URL=redis://localhost:6379/0
 
 # AI
+AI_PROVIDER=anthropic|openai|ollama
 ANTHROPIC_API_KEY=sk-...
+ANTHROPIC_MODEL=claude-sonnet-4-6
+OPENAI_API_KEY=...
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4o-mini
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.2
+AI_CACHE_TTL=86400
 
 # Platforms
 HACKERONE_API_TOKEN=...
@@ -417,20 +427,17 @@ INTIGRITI_CLIENT_SECRET=...
 # Discord (optional)
 DISCORD_WEBHOOK_URL=...
 
-# Settings
-RECON_CONCURRENCY=10
-NUCLEI_RATE_LIMIT=150
-SCREENSHOT_TIMEOUT=30
-MAX_RECON_DEPTH=2
 # Dashboard
 DASHBOARD_PASSWORD=
 
 # Storage
 OUTPUT_DIR=/tmp/syshunt
 
-# AI
-ANTHROPIC_MODEL=claude-sonnet-4-6
-AI_CACHE_TTL=86400
+# Settings
+RECON_CONCURRENCY=10
+NUCLEI_RATE_LIMIT=150
+SCREENSHOT_TIMEOUT=30
+MAX_RECON_DEPTH=2
 
 # Safety
 ALLOW_LOCAL_TARGETS=false
@@ -503,3 +510,4 @@ ALLOW_LOCAL_TARGETS=false
 | 2026-05-15 | `GoWitnessWrapper` usa sintaxe v3: `gowitness scan single --url ... --screenshot-path ...` | Dockerfile instala `@latest` que é v3+; sintaxe v2 (`gowitness single`) não existe mais |
 | 2026-05-15 | `core/notifications.py` com `notify_recon_completed` e `notify_high_score_finding` integradas em `run_ai_analysis`; stubs para `notify_new_program`, `notify_scope_changed`, `notify_pipeline_error` | Stubs preparam a interface para Fase 4 sem bloquear operação atual |
 | 2026-05-15 | `export_findings_csv` e `export_findings_markdown` em `core/db/queries.py`; dashboard usa `st.download_button` | Export de findings é requisito de operabilidade antes de monitoramento contínuo |
+| 2026-05-15 | Fase 3.8 criada antes da Fase 4 | Corrigir docs quebradas, compose exposto, paginação em memória, provider por finding, Settings Page com sessão longa e ALLOW_LOCAL_TARGETS documentado mas não implementado |

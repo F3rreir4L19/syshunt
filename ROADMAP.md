@@ -9,11 +9,11 @@
 ## COMO TRABALHAR COM O CLAUDE NESTE PROJETO
 
 **Prompt de abertura de sessão (copie e adapte):**
-```
+```text
 Leia o CLAUDE.md e o ROADMAP.md do projeto Syshunt.
-Estou na [FASE 3 — FUNDAÇÃO DO PROJETO].
+Estou na [FASE ATUAL].
 Execute as tasks pendentes nessa fase.
-Após cada task: rode os testes, faça commit com mensagem descritiva.
+Após cada grupo: rode os testes, faça commit com mensagem descritiva.
 Atualize os checkboxes no ROADMAP.md ao concluir cada item.
 Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar.
 ```
@@ -26,7 +26,7 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 
 ---
 
-## FASE 1 — FUNDAÇÃO DO PROJETO
+## FASE 1 — FUNDAÇÃO DO PROJETO ✅
 *Objetivo: projeto rodando localmente com pipeline básico funcional*
 
 ### Setup Inicial
@@ -69,8 +69,7 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 
 ---
 
-
-## FASE 1.5 — CORREÇÕES ESTRUTURAIS
+## FASE 1.5 — CORREÇÕES ESTRUTURAIS ✅
 *Objetivo: corrigir debt técnico identificado na revisão da Fase 1 antes que a Fase 2 o amplifique*
 
 ### Pipeline e Estado
@@ -88,8 +87,9 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 - [x] `dashboard/app.py` passa a importar de `core/db/queries.py`
 - [x] Atualizar testes afetados pela refatoração
 
+---
 
-## FASE 2 — RECON COMPLETO
+## FASE 2 — RECON COMPLETO ✅
 *Objetivo: pipeline de recon completo e recursivo*
 
 ### Novos Wrappers
@@ -119,8 +119,7 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 
 ---
 
-
-## FASE 2.5 — CORREÇÕES E FUNDAÇÃO PARA IA
+## FASE 2.5 — CORREÇÕES E FUNDAÇÃO PARA IA ✅
 *Objetivo: corrigir bugs críticos da Fase 2 e preparar a infra de classificação antes de implementar IA*
 
 ### Correções de Pipeline
@@ -153,9 +152,9 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 - [x] Migration: adicionar campos `classifier_used`, `confidence_note`, `ai_reasoning`, `ai_report_draft` à tabela `findings`
 - [x] Testes do classificador heurístico com findings sintéticos cobrindo todos os critérios de score
 
+---
 
-
-## FASE 3 — ANÁLISE POR IA
+## FASE 3 — ANÁLISE POR IA ✅
 *Objetivo: implementar enhancement via IA sobre o classificador heurístico já funcional da Fase 2.5*
 
 ### Integração de Providers
@@ -188,8 +187,7 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 
 ---
 
-
-## FASE 3.5 — CORREÇÕES E HARDENING DA FASE 3
+## FASE 3.5 — CORREÇÕES E HARDENING DA FASE 3 ✅
 *Objetivo: corrigir bugs críticos da Fase 3 antes de implementar monitoramento*
 
 ### Correções Críticas
@@ -206,7 +204,7 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 - [x] `run_ai_analysis`: adicionar `ai_call_delay_seconds` configurável via `get_setting`; aplicar `time.sleep(delay)` entre cada chamada de IA
 
 ### Qualidade e Segurança
-- [x] `template_generator`: usar `yaml.safe_load()` + validar campos obrigatórios nuclei (`id`, `info.name`, `info.severity`, ao menos um de `requests`/`http`/`network`) antes de salvar; levantar `ValueError` com mensagem descritiva se inválido
+- [x] `template_generator`: usar `yaml.safe_load()` + validar campos obrigatórios nuclei (`id`, `info.name`, `info.severity`, ao menos um de `requests`/`http`/`network`) antes de salvar; levantar `ValueError` com mensagem descritivo se inválido
 - [x] `pyproject.toml`: adicionar `pyyaml>=6.0` como dependência; adicionar `openai` como dependência opcional (`[openai]`); tratar `ImportError` no `OpenAICompatibleProvider.complete()` com mensagem clara
 - [x] `Dockerfile.worker`: instalar `dnsx` via `go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest`; instalar `chromium chromium-driver` via apt; rodar `nuclei -update-templates || true` no build
 - [x] Testes: `run_ai_analysis` com `force_reanalyze=True` ignora cache; `run_ai_analysis` com `auto_analyze=False` no target não é disparado; `set_setting` com key existente não levanta IntegrityError; `run_dnsx_filter` com dnsx não instalado não aborta pipeline
@@ -217,24 +215,23 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 
 ---
 
-## FASE 3.6 — SINCRONIZAÇÃO DE DOCS E CONTRATOS
+## FASE 3.6 — SINCRONIZAÇÃO DE DOCS E CONTRATOS ✅
 *Objetivo: alinhar CLAUDE.md, ROADMAP.md e SPEC.md com o estado real pós-Fase 3.5 antes de mexer no código.*
 
 ### Docs
-- [ ] Atualizar CLAUDE.md com “Estado atual real — pós Fase 3.5”.
-- [ ] Atualizar CLAUDE.md com regras de dashboard, Celery, findings, notifications e wrappers.
-- [ ] Atualizar ROADMAP.md adicionando Fase 3.7 antes da Fase 4.
-- [ ] Atualizar SPEC.md com comportamento real esperado para dashboard, pipeline, notifications, auth e deployment.
-- [ ] Remover/evitar itens incorretos:
+- [x] Atualizar CLAUDE.md com “Estado atual real — pós Fase 3.5”.
+- [x] Atualizar CLAUDE.md com regras de dashboard, Celery, findings, notifications e wrappers.
+- [x] Atualizar ROADMAP.md adicionando Fase 3.7 antes da Fase 4.
+- [x] Atualizar SPEC.md com comportamento real esperado para dashboard, pipeline, notifications, auth e deployment.
+- [x] Remover/evitar itens incorretos:
   - Não afirmar que `SystemSetting.updated_at` não tem `onupdate`; o código atual já tem.
   - Não tratar `insert_recon_results_with_dedup` como falha silenciosa crítica.
   - Não transformar criptografia de secrets em bloqueador da Fase 3.7; documentar como dívida/backlog.
 
 ### Critério de saída
-- [ ] Nenhuma mudança de código.
-- [ ] Docs refletem que Fase 4 só começa após Fase 3.7.
-- [ ] Prompt da Fase 3.7 registrado no ROADMAP.md ou em `docs/prompts/fase_3_7.md`.
-
+- [x] Nenhuma mudança de código.
+- [x] Docs refletem que Fase 4 só começa após Fase 3.7.
+- [x] Prompt da Fase 3.7 registrado no ROADMAP.md ou em `docs/prompts/fase_3_7.md`.
 
 ---
 
@@ -276,13 +273,11 @@ Pré-requisito para Fase 4: concluir esta fase. **CONCLUÍDA — 307 testes pass
 - [x] Dashboard inclui `analysis_running` no filtro/lista de status.
 - [x] Testes: transição `recon_done → analysis_running → ready_for_review` (4 testes).
 
----
-
-### Grupo B — Bugs e consistência
+### Grupo B — Bugs e consistência ✅
 
 #### B1. `run_dnsx_filter` com retorno consistente
 - [x] Todos os paths retornam `{target_id, tool, filtered, kept, skipped}`.
-- [x] Paths sem skip devem retornar `skipped=False`.
+- [x] Paths sem skip retornam `skipped=False`.
 - [x] Exceptions retornam `filtered=0`, `kept=0`, `skipped=True`.
 - [x] Testes: sucesso, sem subdomínios, wrapper fail, FileNotFoundError/exception.
 
@@ -304,20 +299,18 @@ Pré-requisito para Fase 4: concluir esta fase. **CONCLUÍDA — 307 testes pass
 - [x] Testes: `limit/offset` funcionam.
 
 #### B5. CSV com BOM
-- [x] `_parse_domains_from_csv` deve aceitar `\ufeffdomain`.
+- [x] `_parse_domains_from_csv` aceita `\ufeffdomain`.
 - [x] Usar `utf-8-sig` ou normalizar fieldnames.
 - [x] Testes: CSV com BOM e header `domain,notes`.
 
 #### B6. Scope wildcard
-- [x] `check_in_scope` deve suportar:
+- [x] `check_in_scope` suporta:
   - `example.com`: raiz + subdomínios.
   - `*.example.com`: apenas subdomínios.
   - excludes sempre vencem includes.
 - [x] Testes cobrindo wildcard, raiz, subdomínio e exclude.
 
----
-
-### Grupo C — Uso real
+### Grupo C — Uso real ✅
 
 #### C1. Notificações Discord
 - [x] Criar `core/notifications.py`.
@@ -362,8 +355,6 @@ Pré-requisito para Fase 4: concluir esta fase. **CONCLUÍDA — 307 testes pass
 - [x] Avisar: não rodar scans fora de escopo/autorização.
 - [x] Avisar: para VPS, usar `DASHBOARD_PASSWORD` e não expor Redis/Postgres/Flower publicamente.
 
----
-
 ### Fora de escopo da Fase 3.7
 
 - [ ] Criptografia completa de `SystemSetting.value`.
@@ -388,13 +379,99 @@ Esses itens ficam para Fase 4, Fase 4.5 ou pós-Fase 5.
 - [x] Findings podem ser exportados (CSV + Markdown).
 - [x] README permite rodar o projeto do zero.
 
+---
 
+## FASE 3.8 — AUDITORIA PÓS-3.7 E PREPARAÇÃO REAL PARA FASE 4
+*Objetivo: corrigir inconsistências remanescentes de docs, deploy, performance e contratos antes de iniciar monitoramento automático de plataformas.*
+
+### Grupo A — Documentação e contratos
+
+- [ ] Corrigir `SPEC.md`:
+  - remover duplicação de `## NOTIFICAÇÕES`;
+  - fechar blocos Markdown quebrados;
+  - corrigir seção 2.9 `run_dnsx_filter`;
+  - corrigir seção de formatos Discord;
+  - alinhar estados reais do Target.
+- [ ] Atualizar `CLAUDE.md` de “pós Fase 3.5” para “pós Fase 3.7”.
+- [ ] Corrigir arquitetura em `CLAUDE.md`: `core/notifications.py`, não `core/notifications/`.
+- [ ] Atualizar `.env.example` com:
+  - `OUTPUT_DIR`;
+  - `OPENAI_API_KEY`;
+  - `OPENAI_BASE_URL`;
+  - `OPENAI_MODEL`;
+  - `OLLAMA_BASE_URL`;
+  - `OLLAMA_MODEL`;
+  - `AI_PROVIDER`;
+  - `AI_CACHE_TTL`;
+  - `ANTHROPIC_MODEL`;
+  - `ALLOW_LOCAL_TARGETS`.
+
+### Grupo B — Hardening de deploy
+
+- [ ] Criar perfil seguro de compose:
+  - não expor Postgres publicamente;
+  - não expor Redis publicamente;
+  - não expor Flower publicamente;
+  - dashboard em `127.0.0.1:8501` por padrão ou compose separado.
+- [ ] Criar `docker-compose.local.yml` para desenvolvimento com portas locais.
+- [ ] Atualizar README com modo local vs VPS seguro.
+- [ ] Fixar versões das ferramentas Go no Dockerfile.worker ou documentar motivo para `@latest`.
+- [ ] Testar `gowitness scan single` dentro do container ou fixar versão compatível.
+
+### Grupo C — Performance e consistência
+
+- [ ] Refatorar `list_findings()` para paginação real no banco:
+  - `limit`;
+  - `offset`;
+  - query de count separada.
+- [ ] Atualizar dashboard para usar paginação de banco, não slice em memória.
+- [ ] Refatorar `classify_finding()` para receber `provider` e `redis_client` opcionais.
+- [ ] Refatorar `run_ai_analysis()` para resolver provider/cache uma vez por execução.
+- [ ] Refatorar `render_settings_page()` para não manter sessão aberta durante toda a página.
+- [ ] Implementar `ALLOW_LOCAL_TARGETS=false`:
+  - bloquear localhost;
+  - bloquear loopback;
+  - bloquear IPs privados;
+  - bloquear link-local;
+  - permitir apenas se env var for true.
+
+### Grupo D — Estados de falha e resiliência
+
+- [ ] Adicionar estados opcionais:
+  - `recon_failed`;
+  - `analysis_failed`.
+- [ ] Garantir que `run_ai_analysis()` não deixa target preso em `analysis_running` se falhar.
+- [ ] Garantir que falha ao enfileirar pipeline não deixa target preso em `recon_running`.
+- [ ] Integrar `notify_pipeline_error()` a falhas críticas.
+- [ ] Definir retry/backoff mínimo para tasks de rede ou registrar como Fase 4.5.
+
+### Grupo E — Validação de promessas de pipeline
+
+- [ ] Verificar se recon recursivo está realmente conectado ao pipeline principal.
+- [ ] Se não estiver, atualizar SPEC/ROADMAP ou conectar corretamente.
+- [ ] Verificar se Amass está integrado; se não, mover promessa para backlog.
+- [ ] Verificar se ffuf está integrado; se não, mover promessa para backlog.
+- [ ] Criar `docs/current_pipeline.md` com o fluxo real executado hoje.
+
+### Critério de saída
+
+- [ ] `pytest` passando.
+- [ ] `SPEC.md` renderiza corretamente.
+- [ ] `CLAUDE.md` reflete estado pós-3.7.
+- [ ] Compose seguro para VPS existe.
+- [ ] Findings paginam no banco.
+- [ ] Provider/Redis não são resolvidos por finding.
+- [ ] Settings Page usa sessões curtas.
+- [ ] Targets locais/privados são bloqueados por padrão.
+- [ ] Fase 4 pode começar sem carregar dívida de operabilidade.
+
+---
 
 ## FASE 4 — MONITORAMENTO DE PLATAFORMAS
 *Objetivo: detectar novos programas automaticamente*
 
-> Pré-requisito obrigatório: Fase 3.7 concluída.
-> A Fase 4 só deve começar quando o sistema já puder rodar recon manual pela UI, proteger dashboard via senha, notificar conclusão e evitar duplicação básica de findings.
+> Pré-requisito obrigatório: Fase 3.8 concluída.
+> A Fase 4 só deve começar quando o sistema já puder rodar recon manual pela UI, proteger dashboard via senha, notificar conclusão, evitar duplicação básica de findings, usar compose seguro para VPS, paginar findings no banco e bloquear targets locais/privados por padrão.
 
 ### Integração HackerOne
 - [ ] `core/monitor/hackerone.py` — cliente da API
@@ -474,6 +551,187 @@ Funcionalidades desejáveis mas não essenciais para v1:
 
 ---
 
+## PROMPTS OPERACIONAIS
+
+### Prompt — Fase 3.8 Grupo A
+
+```text
+Leia CLAUDE.md, ROADMAP.md e SPEC.md.
+
+Estamos iniciando a FASE 3.8 — AUDITORIA PÓS-3.7 E PREPARAÇÃO REAL PARA FASE 4.
+
+Execute somente o Grupo A — Documentação e contratos.
+
+Não altere código Python.
+Não altere Dockerfile.
+Não altere docker-compose.
+Não implemente Fase 4.
+
+Tarefas:
+1. Corrigir SPEC.md:
+   - remover duplicação da seção NOTIFICAÇÕES;
+   - fechar blocos Markdown quebrados;
+   - corrigir seção 2.9 do contrato run_dnsx_filter;
+   - corrigir formatos Discord;
+   - adicionar estados planejados recon_failed e analysis_failed;
+   - adicionar paginação real no banco como requisito;
+   - adicionar regra ALLOW_LOCAL_TARGETS=false.
+
+2. Atualizar CLAUDE.md:
+   - substituir “Estado atual real — pós Fase 3.5” por “pós Fase 3.7”;
+   - remover itens que agora já foram implementados na Fase 3.7;
+   - corrigir core/notifications.py na arquitetura;
+   - adicionar Fase 3.8 como fase ativa;
+   - atualizar regras sobre compose seguro, paginação real, provider/cache uma vez por análise e targets locais.
+
+3. Atualizar ROADMAP.md:
+   - adicionar Fase 3.8 antes da Fase 4;
+   - marcar Fase 4 como dependente da Fase 3.8;
+   - adicionar nota de sessão da auditoria pós-3.7.
+
+4. Atualizar .env.example apenas se você considerar documentação, adicionando variáveis faltantes:
+   - OUTPUT_DIR
+   - AI_PROVIDER
+   - OPENAI_API_KEY
+   - OPENAI_BASE_URL
+   - OPENAI_MODEL
+   - OLLAMA_BASE_URL
+   - OLLAMA_MODEL
+   - AI_CACHE_TTL
+   - ANTHROPIC_MODEL
+   - ALLOW_LOCAL_TARGETS
+
+Ao final:
+- Não rode pytest se só mudou documentação/env example.
+- Mostre diff resumido.
+- Faça commit:
+  docs(roadmap): add phase 3.8 post-operability audit
+```
+
+### Prompt — Fase 3.8 Grupo B
+
+```text
+Leia CLAUDE.md, ROADMAP.md e SPEC.md.
+
+Continue a FASE 3.8.
+Execute somente o Grupo B — Hardening de deploy.
+
+Não implemente Fase 4.
+Não mexa em monitoramento de plataformas.
+
+Tarefas:
+1. Tornar compose seguro:
+   - não expor Postgres publicamente;
+   - não expor Redis publicamente;
+   - não expor Flower publicamente;
+   - dashboard deve bindar em 127.0.0.1 por padrão ou ficar em arquivo separado.
+
+2. Criar docker-compose.local.yml:
+   - expõe portas locais para desenvolvimento;
+   - deixa claro que não é para VPS pública.
+
+3. Atualizar README:
+   - explicar compose local vs VPS;
+   - explicar Tailscale/SSH tunnel/proxy autenticado;
+   - explicar que make up-all em VPS não deve expor db/redis/flower.
+
+4. Dockerfile.worker:
+   - avaliar se ferramentas Go devem ser fixadas em versões.
+   - se for simples, fixar gowitness em versão compatível com `gowitness scan single`.
+   - se não fixar todas agora, registrar como pendência explícita no ROADMAP.
+
+Testes/validação:
+- docker compose config deve passar.
+- docker compose -f docker-compose.yml -f docker-compose.local.yml config deve passar.
+- README atualizado.
+
+Commit:
+chore(deploy): separate local and vps compose profiles
+```
+
+### Prompt — Fase 3.8 Grupo C
+
+```text
+Leia CLAUDE.md, ROADMAP.md e SPEC.md.
+
+Continue a FASE 3.8.
+Execute somente o Grupo C — Performance e consistência.
+
+Não implemente Fase 4.
+
+Tarefas:
+1. Paginação real:
+   - refatorar list_findings para aplicar limit/offset no banco antes de all().
+   - criar count_findings com os mesmos filtros.
+   - atualizar dashboard Findings para usar count_findings + list_findings(limit, offset).
+   - remover slice em memória.
+
+2. Provider/cache:
+   - refatorar classify_finding para aceitar provider e redis_client opcionais.
+   - run_ai_analysis deve resolver provider e redis uma vez.
+   - run_ai_analysis_for_finding também deve resolver uma vez.
+   - manter compatibilidade com chamadas antigas.
+
+3. Settings Page:
+   - remover session_ctx = SessionLocal(); __enter__/__exit__ manual.
+   - quebrar em funções menores com with SessionLocal() por operação.
+   - preservar comportamento atual.
+
+4. ALLOW_LOCAL_TARGETS:
+   - implementar bloqueio padrão para localhost, loopback, IP privado/link-local e .local.
+   - permitir apenas com ALLOW_LOCAL_TARGETS=true.
+   - aplicar em create_target e bulk_create_targets.
+
+Testes:
+- list_findings usa limit/offset corretamente.
+- count_findings retorna total correto.
+- provider chamado uma vez para múltiplos findings.
+- settings page helpers salvam/carregam com sessões curtas.
+- localhost/private IP rejeitados por padrão.
+- ALLOW_LOCAL_TARGETS=true permite targets locais.
+
+Commit:
+fix(core): enforce real pagination and target safety
+```
+
+### Prompt — Fase 3.8 Grupos D/E
+
+```text
+Leia CLAUDE.md, ROADMAP.md e SPEC.md.
+
+Continue a FASE 3.8.
+Execute Grupos D e E — Estados de falha e validação do pipeline real.
+
+Não implemente APIs HackerOne/Bugcrowd/Intigriti ainda.
+
+Tarefas:
+1. Estados de falha:
+   - adicionar suporte a recon_failed e analysis_failed se simples.
+   - run_ai_analysis não deve deixar target preso em analysis_running em erro.
+   - run_full_pipeline não deve deixar target preso em recon_running se dispatch falhar.
+   - integrar notify_pipeline_error quando viável.
+
+2. Validar pipeline real:
+   - documentar o pipeline atual em docs/current_pipeline.md.
+   - verificar se recon recursivo está conectado ao pipeline principal.
+   - verificar se amass está realmente integrado.
+   - verificar se ffuf está realmente integrado.
+   - se não estiverem, ajustar SPEC/ROADMAP para não prometer como implementado ou mover para backlog.
+
+3. Testes:
+   - erro em run_ai_analysis seta analysis_failed ou status seguro.
+   - erro em dispatch do pipeline não prende recon_running.
+   - docs/current_pipeline.md criado.
+
+Ao final:
+- Rode pytest.
+- Atualize ROADMAP.md marcando Fase 3.8.
+- Commit:
+  chore(roadmap): close phase 3.8 readiness audit
+```
+
+---
+
 ## NOTAS DE SESSÃO
 
 *Registre aqui o que foi feito em cada sessão para manter continuidade:*
@@ -487,3 +745,4 @@ Funcionalidades desejáveis mas não essenciais para v1:
 | 2026-05-15 | Análise | Auditoria combinada pós-3.5: maioria dos achados do Claude validada; removidos exageros/itens incorretos; criada Fase 3.6 para docs e Fase 3.7 para operabilidade antes da Fase 4. | Fase 3.6 e 3.7 |
 | 2026-05-15 | 3.7-C | Grupo C concluído: core/notifications.py (C1), integração notify em run_ai_analysis (C2), export_findings_csv/markdown + dashboard buttons (C3), gowitness v3 scan single (C4), README.md UTF-8 recriado (C5). 307 testes passando. | Fase 4 após Fase 3.7 completa |
 | 2026-05-15 | 3.7 ✅ | Revisão final: todos os 17 critérios de saída confirmados no código. Fase 3.7 encerrada. Próxima: Fase 4 — Monitoramento de Plataformas. | — |
+| 2026-05-15 | Auditoria pós-3.7 | 3.7 validada em grande parte; encontrados problemas remanescentes em SPEC.md, CLAUDE.md, compose exposto, paginação em memória, provider por finding, settings session longa e ALLOW_LOCAL_TARGETS não implementado. Criada Fase 3.8 antes da Fase 4. | Fase 3.8 |
