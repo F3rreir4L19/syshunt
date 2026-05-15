@@ -281,39 +281,39 @@ Pré-requisito para Fase 4: concluir esta fase.
 ### Grupo B — Bugs e consistência
 
 #### B1. `run_dnsx_filter` com retorno consistente
-- [ ] Todos os paths retornam `{target_id, tool, filtered, kept, skipped}`.
-- [ ] Paths sem skip devem retornar `skipped=False`.
-- [ ] Exceptions retornam `filtered=0`, `kept=0`, `skipped=True`.
-- [ ] Testes: sucesso, sem subdomínios, wrapper fail, FileNotFoundError/exception.
+- [x] Todos os paths retornam `{target_id, tool, filtered, kept, skipped}`.
+- [x] Paths sem skip devem retornar `skipped=False`.
+- [x] Exceptions retornam `filtered=0`, `kept=0`, `skipped=True`.
+- [x] Testes: sucesso, sem subdomínios, wrapper fail, FileNotFoundError/exception.
 
 #### B2. `force_reanalyze` funcional
-- [ ] Se `force_reanalyze=True`, incluir findings já classificados na query.
-- [ ] Criar ou planejar `run_ai_analysis_for_finding(finding_id, force_reanalyze=True)`.
-- [ ] Ajustar botão “Re-analyze with AI” para comportamento real.
-- [ ] Testes: finding com `classifier_used="heuristic"` é reprocessado com force.
+- [x] Se `force_reanalyze=True`, incluir findings já classificados na query.
+- [x] Criar ou planejar `run_ai_analysis_for_finding(finding_id, force_reanalyze=True)`.
+- [x] Ajustar botão “Re-analyze with AI” para comportamento real.
+- [x] Testes: finding com `classifier_used="heuristic"` é reprocessado com force.
 
 #### B3. Deduplicação de Findings
-- [ ] Antes de inserir Finding em `run_nuclei_scan`, verificar duplicata por `(target_id, template_id, url)`.
-- [ ] Criar índice/constraint composto via Alembic, se tecnicamente viável.
-- [ ] Testes: re-scan não duplica finding.
+- [x] Antes de inserir Finding em `run_nuclei_scan`, verificar duplicata por `(target_id, template_id, url)`.
+- [x] Criar índice/constraint composto via Alembic, se tecnicamente viável.
+- [x] Testes: re-scan não duplica finding.
 
 #### B4. Paginação em Findings
-- [ ] `list_findings()` recebe `limit` e `offset`.
-- [ ] Search em memória deve ser revisado para não puxar tudo sem necessidade; se ficar para depois, documentar.
-- [ ] Dashboard adiciona página atual e page size.
-- [ ] Testes: `limit/offset` funcionam.
+- [x] `list_findings()` recebe `limit` e `offset`.
+- [x] Search em memória deve ser revisado para não puxar tudo sem necessidade; se ficar para depois, documentar.
+- [x] Dashboard adiciona página atual e page size.
+- [x] Testes: `limit/offset` funcionam.
 
 #### B5. CSV com BOM
-- [ ] `_parse_domains_from_csv` deve aceitar `\ufeffdomain`.
-- [ ] Usar `utf-8-sig` ou normalizar fieldnames.
-- [ ] Testes: CSV com BOM e header `domain,notes`.
+- [x] `_parse_domains_from_csv` deve aceitar `\ufeffdomain`.
+- [x] Usar `utf-8-sig` ou normalizar fieldnames.
+- [x] Testes: CSV com BOM e header `domain,notes`.
 
 #### B6. Scope wildcard
-- [ ] `check_in_scope` deve suportar:
+- [x] `check_in_scope` deve suportar:
   - `example.com`: raiz + subdomínios.
   - `*.example.com`: apenas subdomínios.
   - excludes sempre vencem includes.
-- [ ] Testes cobrindo wildcard, raiz, subdomínio e exclude.
+- [x] Testes cobrindo wildcard, raiz, subdomínio e exclude.
 
 ---
 

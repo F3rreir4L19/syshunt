@@ -107,13 +107,19 @@ def check_in_scope(
 ) -> bool:
     """Return True if *domain* is within scope for the given target.
 
-    A domain is in-scope when it matches (or is a subdomain of) at least one
-    entry in *scope_includes* and does not match any entry in *scope_excludes*.
-    An empty *scope_includes* means everything is allowed.
+    Pattern semantics:
+    - ``example.com``   — matches the root domain AND all its subdomains.
+    - ``*.example.com`` — matches ONLY proper subdomains, not the root.
+
+    Excludes always override includes.
+    An empty *scope_includes* means everything is in-scope.
     """
     def _matches(d: str, pattern: str) -> bool:
         d = d.lower()
         pattern = pattern.lower()
+        if pattern.startswith("*."):
+            base = pattern[2:]
+            return d.endswith("." + base)
         return d == pattern or d.endswith("." + pattern)
 
     if scope_includes and not any(_matches(domain, p) for p in scope_includes):
@@ -143,6 +149,25 @@ def list_targets(session: Session) -> list[dict[str, object]]:
 # ---------------------------------------------------------------------------
 
 
+def finding_exists(
+    session: Session,
+    target_id: int,
+    template_id: str | None,
+    url: str | None,
+) -> bool:
+    """Return True when a Finding with the same (target_id, template_id, url) exists."""
+    q = session.query(Finding).filter(Finding.target_id == target_id)
+    if template_id is not None:
+        q = q.filter(Finding.template_id == template_id)
+    else:
+        q = q.filter(Finding.template_id.is_(None))
+    if url is None:
+        q = q.filter(Finding.url.is_(None))
+    else:
+        q = q.filter(Finding.url == url)
+    return q.first() is not None
+
+
 def list_findings(
     session: Session,
     severities: list[str] | None = None,
@@ -152,6 +177,8 @@ def list_findings(
     vuln_types: list[str] | None = None,
     score_min: int = 0,
     score_max: int = 100,
+    limit: int | None = None,
+    offset: int = 0,
 ) -> list[dict[str, object]]:
     query = session.query(Finding).join(Target).order_by(Finding.created_at.desc())
 
@@ -178,6 +205,12 @@ def list_findings(
             or (f.url is not None and cleaned_search in f.url.lower())
             or (f.template_id is not None and cleaned_search in f.template_id.lower())
         ]
+
+    # Apply pagination after all filters (including in-memory text search)
+    if offset:
+        findings = findings[offset:]
+    if limit is not None:
+        findings = findings[:limit]
 
     return [
         {

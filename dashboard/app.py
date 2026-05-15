@@ -20,7 +20,12 @@ from core.db.queries import (
     normalize_domain,
 )
 from core.db.session import SessionLocal
-from core.pipeline.tasks import celery_app, run_ai_analysis, run_full_pipeline
+from core.pipeline.tasks import (
+    celery_app,
+    run_ai_analysis,
+    run_ai_analysis_for_finding,
+    run_full_pipeline,
+)
 
 
 PAGE_TARGETS = "Targets"
@@ -125,7 +130,7 @@ def _parse_domains_from_csv(content: bytes) -> list[str]:
     Accepts a file with a header row containing a 'domain' column, or a
     single-column file with no header (plain list of domains).
     """
-    text = content.decode("utf-8", errors="replace")
+    text = content.decode("utf-8-sig", errors="replace")
     reader = csv.DictReader(io.StringIO(text))
     domains: list[str] = []
     if reader.fieldnames and "domain" in [f.lower() for f in (reader.fieldnames or [])]:
@@ -434,10 +439,34 @@ def _render_findings_filters_and_table() -> None:
         st.info("No findings match the current filters.")
         return
 
+    # Pagination
+    _PAGE_SIZE = 100
+    total_count = len(findings)
+    num_pages = max(1, (total_count + _PAGE_SIZE - 1) // _PAGE_SIZE)
+
+    pg_col1, pg_col2 = st.columns([4, 1])
+    pg_col1.caption(f"{total_count} finding(s) found")
+    if num_pages > 1:
+        page_num = int(
+            pg_col2.number_input(
+                "Page",
+                min_value=1,
+                max_value=num_pages,
+                value=1,
+                key="findings_page",
+                label_visibility="collapsed",
+            )
+        )
+    else:
+        page_num = 1
+
+    start_idx = (page_num - 1) * _PAGE_SIZE
+    page_findings = findings[start_idx : start_idx + _PAGE_SIZE]
+
     # Strip heavy fields for the table view
     table_rows = [
         {k: v for k, v in f.items() if k not in {"raw_evidence", "description", "target_id"}}
-        for f in findings
+        for f in page_findings
     ]
 
     st.dataframe(
@@ -449,12 +478,12 @@ def _render_findings_filters_and_table() -> None:
 
     st.divider()
     st.subheader("Finding Detail")
-    finding_ids = [f["id"] for f in findings]
+    finding_ids = [f["id"] for f in page_findings]
     selected_id = st.selectbox(
         "Select finding to view details",
         finding_ids,
         format_func=lambda fid: next(
-            (f"{f['severity'].upper()} – {f['title']}" for f in findings if f["id"] == fid),
+            (f"{f['severity'].upper()} – {f['title']}" for f in page_findings if f["id"] == fid),
             str(fid),
         ),
     )
@@ -515,12 +544,12 @@ def _render_finding_detail(finding_id: int) -> None:
     with st.expander("Raw evidence"):
         st.json(detail["raw_evidence"])
 
-    # Re-analyze button (only when not yet AI-classified)
+    # Re-analyze button (only when not yet AI-classified or classified heuristically)
     if not classifier_used or classifier_used == "heuristic":
         if st.button("Re-analyze with AI", key=f"reanalyze_{finding_id}"):
             try:
-                run_ai_analysis.apply_async(
-                    args=[int(detail["target_id"])],
+                run_ai_analysis_for_finding.apply_async(
+                    args=[finding_id],
                     kwargs={"force_reanalyze": True},
                 )
                 st.success("Re-analysis queued.")

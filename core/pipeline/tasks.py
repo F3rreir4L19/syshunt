@@ -427,7 +427,9 @@ def run_nuclei_scan(target_id: int) -> dict[str, int | str]:
             data_items=finding_data_items,
         )
         for finding_data in inserted:
-            session.add(_finding_from_nuclei_result(target.id, finding_data))
+            f = _finding_from_nuclei_result(target.id, finding_data)
+            if not queries.finding_exists(session, target.id, f.template_id, f.url):
+                session.add(f)
 
         target.status = "recon_done"
         target.last_recon_at = datetime.now(UTC)
@@ -491,13 +493,16 @@ def run_ai_analysis(target_id: int, limit: int | None = None, force_reanalyze: b
 
         delay = float(queries.get_setting(session, "ai_call_delay_seconds") or "1")
 
+        base_filters = [
+            Finding.target_id == target_id,
+            Finding.status == "new",
+        ]
+        if not force_reanalyze:
+            # Normal mode: skip already-classified findings
+            base_filters.append(Finding.classifier_used.is_(None))
         findings_query = (
             session.query(Finding)
-            .filter(
-                Finding.target_id == target_id,
-                Finding.status == "new",
-                Finding.classifier_used.is_(None),
-            )
+            .filter(*base_filters)
             .order_by(Finding.auto_score.desc())
         )
         if effective_limit is not None:
@@ -543,7 +548,13 @@ def run_dnsx_filter(target_id: int) -> dict[str, int | str]:
 
             if not active_subdomain_results:
                 log.info("dnsx_filter_skipped", reason="no_active_subdomains")
-                return {"target_id": target_id, "tool": "dnsx", "filtered": 0, "kept": 0}
+                return {
+                    "target_id": target_id,
+                    "tool": "dnsx",
+                    "filtered": 0,
+                    "kept": 0,
+                    "skipped": False,
+                }
 
             all_domains = [
                 r.data["value"]
@@ -551,7 +562,13 @@ def run_dnsx_filter(target_id: int) -> dict[str, int | str]:
                 if r.data.get("value")
             ]
             if not all_domains:
-                return {"target_id": target_id, "tool": "dnsx", "filtered": 0, "kept": 0}
+                return {
+                    "target_id": target_id,
+                    "tool": "dnsx",
+                    "filtered": 0,
+                    "kept": 0,
+                    "skipped": False,
+                }
 
             result = DnsxWrapper().run("\n".join(all_domains))
             if not result.success:
@@ -560,7 +577,7 @@ def run_dnsx_filter(target_id: int) -> dict[str, int | str]:
                     "target_id": target_id,
                     "tool": "dnsx",
                     "filtered": 0,
-                    "kept": len(all_domains),
+                    "kept": 0,
                     "skipped": True,
                 }
 
@@ -587,16 +604,51 @@ def run_dnsx_filter(target_id: int) -> dict[str, int | str]:
 
         kept = len(all_domains) - filtered
         log.info("dnsx_filter_completed", filtered=filtered, kept=kept)
-        return {"target_id": target_id, "tool": "dnsx", "filtered": filtered, "kept": kept}
+        return {
+            "target_id": target_id,
+            "tool": "dnsx",
+            "filtered": filtered,
+            "kept": kept,
+            "skipped": False,
+        }
 
     except ValueError:
         raise  # propagate "Target not found" — that's a real error
     except (FileNotFoundError, RuntimeError) as exc:
         log.warning("dnsx_not_available", error=str(exc))
-        return {"target_id": target_id, "tool": "dnsx", "skipped": True}
+        return {"target_id": target_id, "tool": "dnsx", "filtered": 0, "kept": 0, "skipped": True}
     except Exception as exc:
         log.warning("dnsx_not_available", error=str(exc))
-        return {"target_id": target_id, "tool": "dnsx", "skipped": True}
+        return {"target_id": target_id, "tool": "dnsx", "filtered": 0, "kept": 0, "skipped": True}
+
+
+@celery_app.task(name="core.pipeline.run_ai_analysis_for_finding")
+def run_ai_analysis_for_finding(
+    finding_id: int, force_reanalyze: bool = True
+) -> dict[str, Any]:
+    """Classify a single finding using AI or heuristic.
+
+    Bypasses the Redis cache by default (force_reanalyze=True) so the caller
+    always gets a fresh result.  Does NOT change target.status.
+    """
+    log = structlog.get_logger().bind(
+        finding_id=finding_id, task="run_ai_analysis_for_finding"
+    )
+    from core.analysis.classifier import classify_finding
+
+    with SessionLocal() as session:
+        finding = session.get(Finding, finding_id)
+        if finding is None:
+            raise ValueError(f"Finding {finding_id} not found")
+        target = session.get(Target, finding.target_id)
+        if target is None:
+            raise ValueError(f"Target {finding.target_id} not found")
+
+        classify_finding(finding, target, session, force_reanalyze=force_reanalyze)
+        session.commit()
+
+    log.info("finding_analyzed", finding_id=finding_id)
+    return {"finding_id": finding_id, "classified": 1}
 
 
 @celery_app.task(name="core.pipeline.run_full_pipeline")
