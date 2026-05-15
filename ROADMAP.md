@@ -386,15 +386,15 @@ Esses itens ficam para Fase 4, Fase 4.5 ou pós-Fase 5.
 
 ### Grupo A — Documentação e contratos
 
-- [ ] Corrigir `SPEC.md`:
+- [x] Corrigir `SPEC.md`:
   - remover duplicação de `## NOTIFICAÇÕES`;
   - fechar blocos Markdown quebrados;
   - corrigir seção 2.9 `run_dnsx_filter`;
   - corrigir seção de formatos Discord;
   - alinhar estados reais do Target.
-- [ ] Atualizar `CLAUDE.md` de “pós Fase 3.5” para “pós Fase 3.7”.
-- [ ] Corrigir arquitetura em `CLAUDE.md`: `core/notifications.py`, não `core/notifications/`.
-- [ ] Atualizar `.env.example` com:
+- [x] Atualizar `CLAUDE.md` de “pós Fase 3.5” para “pós Fase 3.7”.
+- [x] Corrigir arquitetura em `CLAUDE.md`: `core/notifications.py`, não `core/notifications/`.
+- [x] Atualizar `.env.example` com:
   - `OUTPUT_DIR`;
   - `OPENAI_API_KEY`;
   - `OPENAI_BASE_URL`;
