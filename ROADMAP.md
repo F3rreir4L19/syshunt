@@ -215,10 +215,187 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 - [x] Adicionar campo "AI call delay (seconds)" na seção AI Provider (number input, min=0, max=10, default=1)
 - [x] Adicionar campo "Auto-analyze new targets" (checkbox, default True) como setting global que pré-preenche o campo `auto_analyze` em novos targets
 
+---
+
+## FASE 3.6 — SINCRONIZAÇÃO DE DOCS E CONTRATOS
+*Objetivo: alinhar CLAUDE.md, ROADMAP.md e SPEC.md com o estado real pós-Fase 3.5 antes de mexer no código.*
+
+### Docs
+- [ ] Atualizar CLAUDE.md com “Estado atual real — pós Fase 3.5”.
+- [ ] Atualizar CLAUDE.md com regras de dashboard, Celery, findings, notifications e wrappers.
+- [ ] Atualizar ROADMAP.md adicionando Fase 3.7 antes da Fase 4.
+- [ ] Atualizar SPEC.md com comportamento real esperado para dashboard, pipeline, notifications, auth e deployment.
+- [ ] Remover/evitar itens incorretos:
+  - Não afirmar que `SystemSetting.updated_at` não tem `onupdate`; o código atual já tem.
+  - Não tratar `insert_recon_results_with_dedup` como falha silenciosa crítica.
+  - Não transformar criptografia de secrets em bloqueador da Fase 3.7; documentar como dívida/backlog.
+
+### Critério de saída
+- [ ] Nenhuma mudança de código.
+- [ ] Docs refletem que Fase 4 só começa após Fase 3.7.
+- [ ] Prompt da Fase 3.7 registrado no ROADMAP.md ou em `docs/prompts/fase_3_7.md`.
+
+
+---
+
+## FASE 3.7 — OPERABILIDADE REAL + HARDENING MÍNIMO
+*Objetivo: transformar o Syshunt de “pipeline implementado” em ferramenta usável no dia a dia, segura para notebook e VPS protegida.*
+
+Pré-requisito para Fase 4: concluir esta fase.
+
+### Grupo A — Operabilidade mínima
+
+#### A1. Autenticação básica no dashboard
+- [ ] Implementar verificação de `DASHBOARD_PASSWORD` antes de renderizar sidebar/páginas.
+- [ ] Se `DASHBOARD_PASSWORD` vazio: permitir acesso local e mostrar warning.
+- [ ] Se definido: exigir senha via Streamlit e guardar `authenticated` em `st.session_state`.
+- [ ] Usar comparação segura.
+- [ ] Testes: senha correta, senha incorreta, env vazia.
+
+#### A2. Botões Start Recon e Re-scan rápido
+- [ ] Importar `run_full_pipeline` no dashboard.
+- [ ] Adicionar botão `Start Recon` por target.
+- [ ] Adicionar botão `Re-scan rápido` por target com `skip_recon=True`.
+- [ ] Desabilitar botões se status em `recon_running` ou `analysis_running`.
+- [ ] Exibir mensagem de pipeline enfileirado.
+- [ ] Testes: mock de `apply_async`, target_id correto, skip_recon correto.
+
+#### A3. Formulário Add Target completo
+- [ ] Campos: `domain`, `scope_includes`, `scope_excludes`, `platform`, `program_id`, `recon_depth`, `auto_analyze`.
+- [ ] Atualizar `create_target()` para aceitar esses campos.
+- [ ] Defaults:
+  - `scope_includes = [domain]`
+  - `scope_excludes = []`
+  - `recon_depth = 2`
+- [ ] Testes: target criado com scope/platform/depth customizados.
+
+#### A4. Status `analysis_running`
+- [ ] `run_ai_analysis` seta `target.status = "analysis_running"` ao iniciar.
+- [ ] Commit imediato após alterar status.
+- [ ] Ao fim, `target.status = "ready_for_review"`.
+- [ ] Dashboard inclui `analysis_running` no filtro/lista de status.
+- [ ] Testes: transição `recon_done → analysis_running → ready_for_review`.
+
+---
+
+### Grupo B — Bugs e consistência
+
+#### B1. `run_dnsx_filter` com retorno consistente
+- [ ] Todos os paths retornam `{target_id, tool, filtered, kept, skipped}`.
+- [ ] Paths sem skip devem retornar `skipped=False`.
+- [ ] Exceptions retornam `filtered=0`, `kept=0`, `skipped=True`.
+- [ ] Testes: sucesso, sem subdomínios, wrapper fail, FileNotFoundError/exception.
+
+#### B2. `force_reanalyze` funcional
+- [ ] Se `force_reanalyze=True`, incluir findings já classificados na query.
+- [ ] Criar ou planejar `run_ai_analysis_for_finding(finding_id, force_reanalyze=True)`.
+- [ ] Ajustar botão “Re-analyze with AI” para comportamento real.
+- [ ] Testes: finding com `classifier_used="heuristic"` é reprocessado com force.
+
+#### B3. Deduplicação de Findings
+- [ ] Antes de inserir Finding em `run_nuclei_scan`, verificar duplicata por `(target_id, template_id, url)`.
+- [ ] Criar índice/constraint composto via Alembic, se tecnicamente viável.
+- [ ] Testes: re-scan não duplica finding.
+
+#### B4. Paginação em Findings
+- [ ] `list_findings()` recebe `limit` e `offset`.
+- [ ] Search em memória deve ser revisado para não puxar tudo sem necessidade; se ficar para depois, documentar.
+- [ ] Dashboard adiciona página atual e page size.
+- [ ] Testes: `limit/offset` funcionam.
+
+#### B5. CSV com BOM
+- [ ] `_parse_domains_from_csv` deve aceitar `\ufeffdomain`.
+- [ ] Usar `utf-8-sig` ou normalizar fieldnames.
+- [ ] Testes: CSV com BOM e header `domain,notes`.
+
+#### B6. Scope wildcard
+- [ ] `check_in_scope` deve suportar:
+  - `example.com`: raiz + subdomínios.
+  - `*.example.com`: apenas subdomínios.
+  - excludes sempre vencem includes.
+- [ ] Testes cobrindo wildcard, raiz, subdomínio e exclude.
+
+---
+
+### Grupo C — Uso real
+
+#### C1. Notificações Discord
+- [ ] Criar `core/notifications.py`.
+- [ ] Implementar `notify_recon_completed`.
+- [ ] Implementar `notify_high_score_finding`.
+- [ ] Stubs seguros para `notify_new_program`, `notify_scope_changed`, `notify_pipeline_error`.
+- [ ] Webhook lido de `system_settings.DISCORD_WEBHOOK_URL` com fallback para env var.
+- [ ] Respeitar flags:
+  - `notify_recon_done`
+  - `notify_high_score_finding`
+- [ ] Falha nunca propaga.
+- [ ] Testes com mock HTTP: payload correto e falha não quebra.
+
+#### C2. Integrar notificações ao pipeline
+- [ ] Ao fim de `run_ai_analysis`, chamar `notify_recon_completed`.
+- [ ] Para findings com score >= 80, chamar `notify_high_score_finding`.
+- [ ] Testes com mocks.
+
+#### C3. Export de findings
+- [ ] `export_findings_csv(session, filters...) -> str`.
+- [ ] `export_findings_markdown(session, filters...) -> str`.
+- [ ] Dashboard com `st.download_button` para CSV.
+- [ ] Dashboard com export/copy Markdown.
+- [ ] Testes: campos principais presentes.
+
+#### C4. GoWitness
+- [ ] Testar sintaxe real da versão instalada no `Dockerfile.worker`.
+- [ ] Se for v3+, ajustar para `gowitness scan single --url ...`.
+- [ ] Se necessário, fixar versão no Dockerfile.
+- [ ] Atualizar testes do wrapper.
+- [ ] Garantir que `filename=None` não quebra dashboard.
+
+#### C5. README operacional
+- [ ] Recriar `README.md` em UTF-8.
+- [ ] Documentar uso local/notebook.
+- [ ] Documentar uso VPS protegida.
+- [ ] Documentar comandos:
+  - `make up`
+  - `make migrate`
+  - `make worker`
+  - `make dashboard`
+  - `make up-all`
+- [ ] Avisar: não rodar scans fora de escopo/autorização.
+- [ ] Avisar: para VPS, usar `DASHBOARD_PASSWORD` e não expor Redis/Postgres/Flower publicamente.
+
+---
+
+### Fora de escopo da Fase 3.7
+
+- [ ] Criptografia completa de `SystemSetting.value`.
+- [ ] Retry/backoff global de Celery tasks.
+- [ ] Concorrência avançada no crawl.
+- [ ] Join/callback robusto para recon recursivo.
+- [ ] Integrações HackerOne/Bugcrowd/Intigriti.
+- [ ] API REST própria.
+- [ ] Página Programs completa.
+
+Esses itens ficam para Fase 4, Fase 4.5 ou pós-Fase 5.
+
+### Critério de saída
+
+- [ ] `pytest` passando.
+- [ ] Dashboard protegido por senha quando `DASHBOARD_PASSWORD` definido.
+- [ ] Recon pode ser disparado pela UI.
+- [ ] Target pode ser criado com scope/platform/depth.
+- [ ] `analysis_running` aparece corretamente.
+- [ ] Re-scan não duplica findings.
+- [ ] Discord notifica conclusão de recon.
+- [ ] Findings podem ser exportados.
+- [ ] README permite rodar o projeto do zero.
+
 
 
 ## FASE 4 — MONITORAMENTO DE PLATAFORMAS
 *Objetivo: detectar novos programas automaticamente*
+
+> Pré-requisito obrigatório: Fase 3.7 concluída.
+> A Fase 4 só deve começar quando o sistema já puder rodar recon manual pela UI, proteger dashboard via senha, notificar conclusão e evitar duplicação básica de findings.
 
 ### Integração HackerOne
 - [ ] `core/monitor/hackerone.py` — cliente da API
@@ -307,3 +484,4 @@ Funcionalidades desejáveis mas não essenciais para v1:
 | 2026-05-13 | 2.5 | Pipeline Canvas chain, urlparse, async recursive recon task, normalize_domain regex, check_in_scope, sha256 completo, source_tool no crawl, filename no screenshot, CSV fix, dnsx/ffuf wrappers, AIProvider, classifier_base, migration findings | — |
 | 2026-05-13 | 2.5+3 | scope validation em tasks, run_dnsx_filter, form validation, SystemSetting, migration 0003, get_setting/set_setting, AIClassifier, classifier.py com Redis cache, template_generator, run_ai_analysis, settings dashboard, AI badges/expanders, Re-analyze button | Interface dashboard para template generator (Fase 5) |
 | 2026-05-14 | 3.5 | provider.py refatorado (api_key nos construtores, get_provider(session)), classify_finding(force_reanalyze), run_dnsx_filter try/except, run_ai_analysis (force_reanalyze+delay+remove os.environ), set_setting merge+flush, Target.auto_analyze+migration 0004, run_nuclei_scan auto_analyze check, template_generator yaml.safe_load, pyproject.toml pyyaml+openai opcional, Dockerfile.worker dnsx+chromium, dashboard Re-analyze+AI delay+auto_analyze settings, 20 novos testes (234 total) | Fase 4 — Monitoramento de Plataformas |
+| 2026-05-15 | Análise | Auditoria combinada pós-3.5: maioria dos achados do Claude validada; removidos exageros/itens incorretos; criada Fase 3.6 para docs e Fase 3.7 para operabilidade antes da Fase 4. | Fase 3.6 e 3.7 |

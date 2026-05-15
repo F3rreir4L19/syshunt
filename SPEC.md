@@ -8,16 +8,22 @@
 ## 1. GESTÃO DE ALVOS
 
 ### 1.1 Injeção Manual
-- Usuário digita um domínio (ex: `example.com`) no dashboard
-- Sistema valida formato do domínio antes de aceitar
-- Usuário pode definir opcionalmente:
-  - `scope_includes`: lista de padrões a incluir (ex: `*.example.com`, `api.example.com`)
-  - `scope_excludes`: lista de padrões a excluir (ex: `blog.example.com`)
-  - `platform`: HackerOne / Bugcrowd / Intigriti / Privado
-  - `program_id`: ID do programa na plataforma (para tracking)
-  - `recon_depth`: profundidade de enumeração recursiva (1-3, default: 2)
-  - `auto_analyze`: se deve rodar análise IA automaticamente após recon (default: true)
-- `auto_analyze`: se deve rodar análise IA automaticamente após recon (default: configurável via Settings; se não configurado globalmente, default = true)
+
+Usuário cria um target pelo dashboard informando:
+
+- `domain` obrigatório.
+- `scope_includes` opcional, um padrão por linha.
+  - Default: domínio informado.
+  - `example.com` inclui raiz e subdomínios.
+  - `*.example.com` inclui apenas subdomínios.
+- `scope_excludes` opcional, um padrão por linha.
+  - Excludes sempre vencem includes.
+- `platform` opcional: HackerOne, Bugcrowd, Intigriti, Private/Manual.
+- `program_id` opcional.
+- `recon_depth` opcional, default 2, permitido 1–3.
+- `auto_analyze` opcional, default vindo de Settings.
+
+O formulário deve expor todos esses campos. Nenhum campo é obrigatório além de `domain`.
 
 ### 1.2 Injeção por CSV
 Formato esperado do CSV:
@@ -35,10 +41,10 @@ target2.com,"","staging.*",bugcrowd,bc-target2,1
 ```
 pending → recon_running → recon_done → analysis_running → ready_for_review → archived
 ```
-- `pending`: alvo adicionado, aguardando execução
+- pending → recon_running → recon_done → analysis_running → ready_for_review → archived
 - `recon_running`: pipeline de recon em execução (com etapa atual visível)
 - `recon_done`: recon concluído, aguardando análise
-- `analysis_running`: análise de IA em execução
+- `analysis_running`: análise heurística/IA em execução; deve ser setado imediatamente no início de `run_ai_analysis`.
 - `ready_for_review`: tudo concluído, findings aguardando revisão do pesquisador
 - `archived`: alvo inativo
 
@@ -46,6 +52,16 @@ pending → recon_running → recon_done → analysis_running → ready_for_revi
 - Usuário pode solicitar re-scan a qualquer momento
 - Re-scan preserva histórico anterior (resultados marcados como `superseded`)
 - Re-scan incremental: opção de rodar só nuclei sem refazer o recon completo
+
+### 1.5 Controles de pipeline no dashboard
+
+Na lista de targets:
+
+- Botão `Start Recon` dispara `run_full_pipeline(target_id)`.
+- Botão `Re-scan rápido` dispara `run_full_pipeline(target_id, skip_recon=True)`.
+- Botões ficam desabilitados quando status é `recon_running` ou `analysis_running`.
+- Após clique, dashboard mostra mensagem de pipeline enfileirado.
+- Usuário acompanha progresso pelo status do target, sidebar de pipeline e Flower quando disponível.
 
 ---
 
@@ -93,6 +109,13 @@ pending → recon_running → recon_done → analysis_running → ready_for_revi
 
 ### 2.5 Etapa 5: Screenshots
 **Ferramenta**: gowitness
+O wrapper deve ser compatível com a versão instalada no worker.
+Se o Dockerfile instalar `gowitness@latest` e a versão for v3+, usar sintaxe:
+
+gowitness scan single --url https://example.com --screenshot-path /path
+
+filename armazenado no ReconResult pode ser null; dashboard e consumidores devem tolerar isso.
+
 **Input**: URLs ativas
 **Output**: screenshots + hashes para deduplicação
 **Comportamento**:
@@ -110,6 +133,15 @@ pending → recon_running → recon_done → analysis_running → ready_for_revi
 - Rate limiting configurável (default: 150 req/s)
 - Cada achado do nuclei vira um `finding` no banco com status `new`
 - Salva output raw + parsed
+#### Deduplicação de Findings
+Antes de criar um Finding a partir de output do nuclei, o sistema deve verificar se já existe finding com:
+
+- mesmo `target_id`;
+- mesmo `template_id`;
+- mesma `url`.
+
+Se existir, não cria duplicata.
+Findings não são deletados automaticamente em re-scan.
 
 ### 2.7 Recon Recursivo
 - Para cada novo subdomínio encontrado em etapas anteriores que não estava na lista original:
@@ -124,6 +156,32 @@ pending → recon_running → recon_done → analysis_running → ready_for_revi
 - Findings existentes **não** são deletados nem superseded; o re-scan pode gerar findings adicionais, nunca remover os anteriores
 - Deduplicação de subdomínios é feita antes de persistir: se o mesmo valor já existe como `ReconResult` ativo (sem `superseded_by`) para o target, não insere duplicata
 - Falhas individuais de ferramenta durante loop (ex: um subdomínio de 50 dando timeout) são logadas como `structlog.warning` com contexto `{target_id, tool, failed_item}` mas não abortam a task; a task só falha se *todos* os itens falharem
+
+
+### 2.9 Contrato de retorno do DNS filter
+
+`run_dnsx_filter` sempre retorna:
+
+```json
+{
+  "target_id": 123,
+  "tool": "dnsx",
+  "filtered": 0,
+  "kept": 0,
+  "skipped": false
+}
+
+Em qualquer falha não-fatal:
+
+{
+  "target_id": 123,
+  "tool": "dnsx",
+  "filtered": 0,
+  "kept": 0,
+  "skipped": true
+}
+
+ValueError para target inexistente continua propagando.
 
 ---
 
@@ -237,6 +295,18 @@ Usuário pode pedir ao sistema para gerar um template nuclei baseado em:
 - Exemplo de request/response de uma vuln encontrada manualmente
 - Padrão de um finding existente para generalizar
 
+### Execução no pipeline
+
+`run_ai_analysis` deve:
+
+1. carregar o target;
+2. setar `target.status = "analysis_running"`;
+3. resolver provider e Redis cache uma única vez por execução;
+4. processar findings selecionados;
+5. setar `target.status = "ready_for_review"`;
+6. disparar notificações configuradas.
+
+Quando `force_reanalyze=True`, findings já classificados também devem ser elegíveis para reprocessamento.
 ---
 
 ## 4. MONITORAMENTO DE PLATAFORMAS
@@ -280,6 +350,21 @@ Usuário pode pedir ao sistema para gerar um template nuclei baseado em:
 - Por alvo: botão "Re-scan", "View Findings", "Archive"
 - Status com indicador visual (cor + ícone)
 - Filtros: por status, por plataforma, por data
+- status;
+- plataforma;
+- profundidade;
+- última execução;
+- botões Start Recon e Re-scan rápido;
+- screenshots quando existirem.
+
+Cores/status sugeridos:
+
+- pending: cinza
+- recon_running: azul
+- recon_done: amarelo
+- analysis_running: laranja
+- ready_for_review: verde
+- archived: cinza escuro
 
 ### 5.2 Página: Findings
 - Tabela principal com todos os achados
@@ -298,6 +383,11 @@ Usuário pode pedir ao sistema para gerar um template nuclei baseado em:
   - Draft de report
   - Botões de ação: "Mark Valid", "Mark False Positive", "Export Report"
 - Agrupamento por alvo ou por tipo (toggle)
+- paginação, default 100 itens por página;
+- filtros por target, severidade, status, score e busca textual;
+- export CSV;
+- export Markdown;
+- detalhe com raw evidence, AI reasoning e report draft.
 
 ### 5.3 Página: Programs
 - Lista de programas monitorados por plataforma
@@ -350,6 +440,46 @@ URL: https://api.example.com/users?id=1
 → View in Dashboard: http://localhost:8501/findings?id=xxx
 ```
 
+## NOTIFICAÇÕES
+
+### Discord Webhook
+
+Módulo: `core/notifications.py`.
+
+Regras:
+
+- Webhook URL vem de `system_settings.DISCORD_WEBHOOK_URL` com fallback para env var `DISCORD_WEBHOOK_URL`.
+- Falha de webhook nunca propaga.
+- Notificações são fire-and-forget.
+- Logs usam `structlog.warning` em caso de erro.
+
+Eventos:
+
+| Evento | Trigger | Flag |
+|---|---|---|
+| `recon_completed` | Fim de `run_ai_analysis` | `notify_recon_done` |
+| `high_score_finding` | Finding com score >= 80 | `notify_high_score_finding` |
+| `new_program` | Futuro scheduler da Fase 4 | `notify_new_program` |
+| `scope_changed` | Futuro scheduler da Fase 4 | `notify_scope_changed` |
+| `pipeline_error` | Erro crítico de task | `notify_pipeline_error` |
+
+Formato mínimo de `recon_completed`:
+
+```text
+✅ [RECON CONCLUÍDO]
+Target: example.com
+Findings: 12
+High/Critical: 3
+Dashboard: http://localhost:8501
+
+Formato mínimo de high_score_finding:
+
+🔴 [HIGH SCORE FINDING]
+Target: api.example.com
+Type: exposed-panel
+Score: 87/100
+Severity: HIGH
+URL: https://api.example.com/admin
 ---
 
 ## 7. SEGURANÇA DO PRÓPRIO SISTEMA
@@ -360,6 +490,31 @@ URL: https://api.example.com/users?id=1
 - Outputs de ferramentas em diretório isolado com permissões restritas
 - Dashboard sem autenticação por padrão (uso local) — mas com opção de senha via env var
 - Rate limiting nas chamadas à Claude API para evitar custos inesperados
+### Autenticação do Dashboard
+
+- Se `DASHBOARD_PASSWORD` estiver vazio:
+  - permitir acesso;
+  - exibir warning de modo local inseguro.
+- Se `DASHBOARD_PASSWORD` estiver definido:
+  - exigir senha antes de renderizar qualquer conteúdo;
+  - usar `st.session_state` para manter login na sessão.
+
+Em VPS, `DASHBOARD_PASSWORD` é obrigatório.
+
+### Secrets
+
+API keys em `system_settings` são plaintext no estado atual.
+Para uso local pessoal, isso é aceitável temporariamente.
+Para VPS, preferir variáveis de ambiente.
+Criptografia de settings sensíveis é backlog futuro.
+
+### Serviços expostos
+
+Em VPS:
+- não expor Postgres publicamente;
+- não expor Redis publicamente;
+- não expor Flower publicamente sem proteção;
+- preferir Tailscale, SSH tunnel, Cloudflare Access ou proxy autenticado.
 
 ---
 
@@ -368,15 +523,29 @@ URL: https://api.example.com/users?id=1
 
 **Modo notebook (uso ocasional):**
 - Executar `make up` para subir PostgreSQL e Redis via Docker
+- Executar `make migrate` para migrar as tabelas
 - Executar `make worker` e `make dashboard` em terminais separados
 - Adequado para rodar recon manual em targets específicos
+- acessar http://localhost:8501
 
 **Modo VPS (uso contínuo e monitoramento):**
+Pré-requisitos:
+
+DASHBOARD_PASSWORD definido.
+Volumes persistentes para banco e output.
+Redis/Postgres/Flower não expostos publicamente.
+Acesso via VPN, SSH tunnel ou proxy autenticado.
+
+cp .env.example .env
+# editar DB_PASSWORD, DASHBOARD_PASSWORD e API keys
+
 - Executar `make up-all` para subir todos os serviços via Docker Compose
 - Worker com `concurrency=4` adequado para VPS 2 vCPU / 4GB RAM
 - Configurar `OUTPUT_DIR` como volume persistente fora do container
 - Flower disponível em `:5555` para monitoramento de filas
 - Recomendado para monitoramento contínuo de plataformas (Fase 4)
+
+docker compose exec worker alembic upgrade head
 
 **Pré-requisitos para pipeline completo:**
 - `dnsx` instalado no worker (go install)

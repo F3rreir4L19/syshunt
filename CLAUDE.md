@@ -21,6 +21,36 @@ O pesquisador fica com as partes que exigem criatividade, contexto e profundidad
 
 ---
 
+---
+
+## ESTADO ATUAL REAL — pós Fase 3.5
+
+O Syshunt já passou das fases 1, 1.5, 2, 2.5, 3 e 3.5.
+
+Implementado:
+- Docker/Compose para db, redis, worker, beat, flower e dashboard.
+- Models SQLAlchemy: Target, Finding, ReconResult, SystemSetting, BountyProgram.
+- Pipeline Celery: subfinder → dnsx → httpx → nmap → webcrawl → screenshot → nuclei.
+- Classificação heurística sempre disponível.
+- Classificação por IA via Anthropic, OpenAI-compatible e Ollama.
+- Cache Redis de análise.
+- Dashboard Streamlit com Targets, Import CSV, Findings e Settings.
+- Geração backend de templates nuclei por IA.
+
+Ainda incompleto:
+- Dashboard não tem autenticação efetiva via DASHBOARD_PASSWORD.
+- Dashboard ainda não dispara Start Recon/Re-scan pela UI.
+- Add Target ainda não expõe scope_includes, scope_excludes, platform, program_id e recon_depth.
+- Página Programs é placeholder.
+- Integrações HackerOne/Bugcrowd/Intigriti ainda não existem.
+- Notificações Discord ainda não existem.
+- Página Templates ainda não existe.
+- Export CSV/Markdown de findings ainda não existe.
+- API keys salvas em system_settings ficam em plaintext; para VPS, preferir env vars.
+- README.md precisa ser reconstruído em UTF-8 e documentar uso real.
+
+Regra: não reimplementar fases já concluídas. A fase ativa antes da Fase 4 é a Fase 3.6/3.7.
+
 ## ARQUITETURA DO SISTEMA
 
 ```
@@ -53,6 +83,7 @@ bughunter/
 │   │   ├── intigriti.py       ← Intigriti API
 │   │   └── scheduler.py       ← scheduler de polling
 │   │
+│   ├── notifications/        ← Discord webhook e eventos fire-and-forget
 │   ├── pipeline/              ← orquestração de workflows
 │   │   ├── tasks.py           ← Celery tasks
 │   │   ├── workflow.py        ← fluxos de execução
@@ -95,6 +126,19 @@ bughunter/
 ### Dashboard
 - **Streamlit** — UI principal (rápido, funcional, sem overhead de frontend)
 
+### Dashboard / Streamlit
+
+- `DASHBOARD_PASSWORD` deve ser verificado no início de `main()`, antes de renderizar sidebar ou páginas.
+- Se `DASHBOARD_PASSWORD` estiver vazio, permitir acesso local e mostrar warning visual.
+- Se `DASHBOARD_PASSWORD` estiver definido, exigir senha via `st.text_input(type="password")` e guardar autenticação em `st.session_state`.
+- Sessões SQLAlchemy no Streamlit devem usar `with SessionLocal() as session:` em escopo estreito por operação.
+- Evitar manter uma sessão aberta durante toda a renderização de uma página Streamlit.
+- Listas que podem crescer, especialmente Findings, devem ter paginação.
+- Targets devem ter ações visíveis:
+  - Start Recon
+  - Re-scan rápido / nuclei only
+- Botões de recon devem ser desabilitados quando `target.status` estiver em `recon_running` ou `analysis_running`.
+
 ### Ferramentas de Segurança (externas, chamadas via subprocess/wrapper)
 - **subfinder** — enumeração de subdomínios
 - **amass** — enumeração passiva/ativa de subdomínios
@@ -130,6 +174,9 @@ bughunter/
 - Nomes de tabelas no plural snake_case: `targets`, `findings`, `recon_results`
 - Todo registro tem `created_at` e `updated_at`
 - Findings têm estado explícito: `new` → `reviewing` → `valid` → `reported` → `closed`
+- Finding deve ser deduplicado por `(target_id, template_id, url)` antes de inserir em re-scan.
+- Re-scan não deve criar findings duplicados quando o mesmo template encontra a mesma URL novamente.
+- `SystemSetting.value` pode conter secrets em plaintext no estado atual. Para uso local é aceitável temporariamente; para VPS, preferir env vars. Criptografia de settings sensíveis fica como backlog pós-operabilidade.
 
 ### Celery Tasks
 - Tasks **idempotentes** sempre que possível
@@ -143,6 +190,13 @@ bughunter/
 - Resultados de recon nunca deletados, apenas marcados como superseded
 - Tasks devem ser testáveis em modo eager (`CELERY_TASK_ALWAYS_EAGER=true`) sem Redis
   ativo; em runtime, Redis continua sendo o broker/result backend padrão.
+- `run_ai_analysis` deve setar `target.status = "analysis_running"` imediatamente ao iniciar e commitar antes de processar findings.
+- `run_ai_analysis(force_reanalyze=True)` deve reprocessar findings já classificados; `force_reanalyze` não deve apenas pular cache.
+- `get_provider(session)` não deve ser chamado dentro do loop de cada finding. Resolver provider uma vez por execução de `run_ai_analysis`.
+- `_get_redis()` também deve ser resolvido uma vez por execução de análise quando possível.
+- `run_dnsx_filter` deve retornar contrato consistente em todos os caminhos:
+  `{target_id, tool, filtered, kept, skipped}`.
+- Falhas de notificação Discord nunca propagam; são fire-and-forget com `structlog.warning`.
 
 ### Wrappers de Ferramentas
 - Cada wrapper: `run(target, options) → ToolResult`
@@ -150,7 +204,10 @@ bughunter/
 - Timeout configurável por ferramenta
 - Output salvo em disco antes de parsear (auditoria)
 - `ToolResult` tem `raw_stdout` e `raw_stderr` separados; `raw_output` é mantido apenas para compatibilidade; `parse_output` opera sempre sobre `raw_stdout`
-
+- Wrappers devem usar subprocess com lista de argumentos, nunca `shell=True`.
+- GoWitnessWrapper deve ser compatível com a versão instalada no Dockerfile.worker.
+- Se usar gowitness latest, testar a sintaxe real no container. Preferir fixar versão ou ajustar o comando para `gowitness scan single --url ... --screenshot-path ...` caso a versão instalada seja v3+.
+- `filename` no ReconResult de screenshot pode ser `None`; consumidores devem tolerar isso.
 ---
 
 ## MODELOS DE DADOS PRINCIPAIS
@@ -293,7 +350,13 @@ Quando o Codex/Claude Code trabalhar neste projeto:
 8. **Segurança primeiro**: inputs de usuário (targets, templates) sempre sanitizados antes de passar para subprocess
 9. **Logs estruturados**: usar `structlog` com contexto (target_id, task_id, tool)
 10. **Atualize este arquivo** quando uma decisão arquitetural for tomada
-
+11. Nunca iniciar Fase 4 enquanto Fase 3.7 não estiver concluída.
+12. Nunca expor dashboard sem DASHBOARD_PASSWORD em VPS.
+13. Nunca expor Redis/Postgres/Flower publicamente por padrão.
+14. Nunca inserir Finding sem checar duplicata por `(target_id, template_id, url)`.
+15. Nunca chamar provider detection dentro do loop de cada finding.
+16. Nunca quebrar o contrato de retorno de tasks; retornos devem ter shape estável.
+17. Se um item for apenas documentação de dívida conhecida, não transformar em grande refactor sem aprovação.
 ---
 
 ## FASES DE DESENVOLVIMENTO
@@ -359,6 +422,18 @@ RECON_CONCURRENCY=10
 NUCLEI_RATE_LIMIT=150
 SCREENSHOT_TIMEOUT=30
 MAX_RECON_DEPTH=2
+# Dashboard
+DASHBOARD_PASSWORD=
+
+# Storage
+OUTPUT_DIR=/tmp/syshunt
+
+# AI
+ANTHROPIC_MODEL=claude-sonnet-4-6
+AI_CACHE_TTL=86400
+
+# Safety
+ALLOW_LOCAL_TARGETS=false
 ```
 
 ---
@@ -416,3 +491,12 @@ MAX_RECON_DEPTH=2
 | 2026-05-13 | template_generator usa yaml.safe_load() + validação de campos obrigatórios nuclei (id, info.name, info.severity, requests ou http) antes de salvar | Arquivos YAML inválidos quebram o nuclei silenciosamente |
 | 2026-05-13 | `openai` adicionado como dependência opcional em pyproject.toml: `pip install syshunt[openai]`; ImportError em runtime se não instalado e provider=openai configurado | Evitar instalar SDK OpenAI para quem usa só Anthropic ou Ollama |
 | 2026-05-13 | Dockerfile.worker instala dnsx, chromium e roda nuclei -update-templates no build | Pipeline completo requer essas ferramentas; sem elas etapas falham silenciosamente |
+| 2026-05-15 | Fase 3.6 criada para sincronizar docs antes de mexer no código | Evitar que o agente trabalhe com specs antigas e reimplemente fases concluídas |
+| 2026-05-15 | Fase 3.7 criada antes da Fase 4 | Monitoramento automático amplificaria bugs de operabilidade, escopo e notificação |
+| 2026-05-15 | Dashboard exige `DASHBOARD_PASSWORD` antes de uso em VPS | Segurança mínima para não expor painel, targets, findings e API keys |
+| 2026-05-15 | Start Recon e Re-scan rápido entram antes de monitoramento de plataformas | O sistema precisa ser operável manualmente antes de automação contínua |
+| 2026-05-15 | `run_ai_analysis` usa `analysis_running` | Dashboard deve refletir análise longa em andamento |
+| 2026-05-15 | Findings são deduplicados por `(target_id, template_id, url)` | Re-scans não devem duplicar achados idênticos |
+| 2026-05-15 | `run_dnsx_filter` retorna shape estável | Evitar que consumidores quebrem em caminhos de erro diferentes |
+| 2026-05-15 | Provider/Redis resolvidos uma vez por análise | Evitar overhead por finding, especialmente com Ollama |
+| 2026-05-15 | Notificações Discord são fire-and-forget | Erro no webhook nunca pode derrubar pipeline |
