@@ -406,17 +406,21 @@ Esses itens ficam para Fase 4, Fase 4.5 ou pós-Fase 5.
   - `ANTHROPIC_MODEL`;
   - `ALLOW_LOCAL_TARGETS`.
 
-### Grupo B — Hardening de deploy
+### Grupo B — Hardening de deploy ✅
 
-- [ ] Criar perfil seguro de compose:
+- [x] Criar perfil seguro de compose:
   - não expor Postgres publicamente;
   - não expor Redis publicamente;
   - não expor Flower publicamente;
-  - dashboard em `127.0.0.1:8501` por padrão ou compose separado.
-- [ ] Criar `docker-compose.local.yml` para desenvolvimento com portas locais.
-- [ ] Atualizar README com modo local vs VPS seguro.
-- [ ] Fixar versões das ferramentas Go no Dockerfile.worker ou documentar motivo para `@latest`.
-- [ ] Testar `gowitness scan single` dentro do container ou fixar versão compatível.
+  - dashboard em `127.0.0.1:8501` por padrão.
+- [x] Criar `docker-compose.local.yml` para desenvolvimento com portas locais.
+- [x] Atualizar README com modo local vs VPS seguro (SSH tunnel, Tailscale, proxy autenticado).
+- [x] Avaliar versões das ferramentas Go no Dockerfile.worker: mantidas em `@latest` com comentário
+  explicativo; gowitness já é v3+ (que usa `scan single`); pinagem de versões específicas fica
+  como backlog — requer verificação dentro do container para confirmar tags exatas.
+- [ ] **Backlog pós-Fase 3.8**: fixar versões Go (subfinder, httpx, nuclei, katana, dnsx, ffuf,
+  gau, gowitness) em valores verificados. Rastrear em https://github.com/sensepost/gowitness/releases
+  e equivalentes. Bloqueante apenas se ferramenta quebrar por mudança de CLI upstream.
 
 ### Grupo C — Performance e consistência
 
@@ -746,3 +750,4 @@ Ao final:
 | 2026-05-15 | 3.7-C | Grupo C concluído: core/notifications.py (C1), integração notify em run_ai_analysis (C2), export_findings_csv/markdown + dashboard buttons (C3), gowitness v3 scan single (C4), README.md UTF-8 recriado (C5). 307 testes passando. | Fase 4 após Fase 3.7 completa |
 | 2026-05-15 | 3.7 ✅ | Revisão final: todos os 17 critérios de saída confirmados no código. Fase 3.7 encerrada. Próxima: Fase 4 — Monitoramento de Plataformas. | — |
 | 2026-05-15 | Auditoria pós-3.7 | 3.7 validada em grande parte; encontrados problemas remanescentes em SPEC.md, CLAUDE.md, compose exposto, paginação em memória, provider por finding, settings session longa e ALLOW_LOCAL_TARGETS não implementado. Criada Fase 3.8 antes da Fase 4. | Fase 3.8 |
+| 2026-05-15 | 3.8 Grupo B | Compose seguro: removidas portas de db/redis/flower, dashboard em 127.0.0.1. Criado docker-compose.local.yml. Makefile: up-local. README: local vs VPS, SSH tunnel, Tailscale, Caddy. Dockerfile.worker: comentário sobre pinagem de versões Go. | Grupos C/D/E da 3.8 |

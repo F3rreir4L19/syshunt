@@ -1,12 +1,16 @@
-.PHONY: up down migrate test worker dashboard lint format seed
+.PHONY: up up-local up-all down migrate test worker dashboard lint format seed
 
 # ─── Infraestrutura ─────────────────────────────────────────
+
+# Start database and Redis only (notebook / local dev — no worker or dashboard container)
 up:
 	docker-compose up -d db redis
 
-down:
-	docker-compose down
+# Start all services with local port bindings (development only — NOT for VPS)
+up-local:
+	docker-compose -f docker-compose.yml -f docker-compose.local.yml up -d
 
+# Start all services without exposing internal ports (VPS / production)
 up-all:
 	docker-compose up -d
 

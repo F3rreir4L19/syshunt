@@ -1,0 +1,31 @@
+version: "3.9"
+
+# docker-compose.local.yml — LOCAL DEVELOPMENT ONLY
+#
+# WARNING: Do NOT use this file on a VPS or public server.
+# It exposes Postgres, Redis, Flower and the dashboard on 127.0.0.1
+# so you can connect directly from host tools (psql, redis-cli, browser).
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+#   make up-local
+#
+# On a VPS, use only docker-compose.yml (base) and access the dashboard
+# via SSH tunnel or Tailscale. Never add this file to a VPS deployment.
+
+services:
+  db:
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  redis:
+    ports:
+      - "127.0.0.1:6379:6379"
+
+  flower:
+    ports:
+      - "127.0.0.1:5555:5555"
+
+  dashboard:
+    ports:
+      - "127.0.0.1:8501:8501"

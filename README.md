@@ -19,6 +19,23 @@ findings using heuristics or an AI provider.
 
 ---
 
+## Compose Files
+
+Syshunt ships two Compose files to separate development and VPS deployments:
+
+| File | Purpose | Who should use it |
+|------|---------|-------------------|
+| `docker-compose.yml` | Base/VPS-safe config — no internal ports exposed to external interfaces | Everyone (always used) |
+| `docker-compose.local.yml` | Development overlay — binds Postgres, Redis, Flower, and dashboard to `127.0.0.1` | Local development only |
+
+**On a VPS:** use only `docker-compose.yml` (via `make up-all`). Never deploy
+`docker-compose.local.yml` to a public server — it is only for local dev machines.
+
+**On a local machine or notebook:** use `make up-local` (which overlays both files) to
+get direct access to all services from your host.
+
+---
+
 ## Quick Start — Local / Notebook Mode
 
 Use this when you want to run occasional manual scans on specific targets.
@@ -39,7 +56,9 @@ cp .env.example .env
 make up
 ```
 
-This starts PostgreSQL and Redis via Docker Compose.
+This starts PostgreSQL and Redis via Docker Compose (no port exposure beyond the
+Docker network). If you also want Flower and the containerized dashboard, use
+`make up-local` instead.
 
 ### 3. Run database migrations
 
@@ -78,6 +97,31 @@ make down
 
 ---
 
+## Development Mode — All Services with Local Ports
+
+If you want to run all services inside Docker and access Postgres/Redis/Flower
+directly from your host (e.g., with `psql`, `redis-cli`, or a browser):
+
+```bash
+make up-local
+# equivalent to:
+# docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+```
+
+This exposes the following ports on `127.0.0.1` only:
+
+| Service | Port |
+|---------|------|
+| PostgreSQL | 5432 |
+| Redis | 6379 |
+| Flower | 5555 |
+| Dashboard | 8501 |
+
+> **Warning:** `make up-local` is for development on a local machine only.
+> Do not run it on a VPS or any server reachable from the internet.
+
+---
+
 ## VPS / Continuous Monitoring Mode
 
 Use this when you want the system running 24/7 to monitor bug bounty platforms.
@@ -85,10 +129,39 @@ Use this when you want the system running 24/7 to monitor bug bounty platforms.
 ### Security requirements for VPS
 
 - Set `DASHBOARD_PASSWORD` — the dashboard is not protected without it
-- Do NOT expose PostgreSQL, Redis, or Flower ports publicly
-- Use a VPN (Tailscale), SSH tunnel, or reverse proxy with authentication to access the
-  dashboard remotely
-- Store your `.env` file with restricted permissions: `chmod 600 .env`
+- PostgreSQL, Redis, and Flower are **not exposed** on external interfaces by default
+- The dashboard binds to `127.0.0.1:8501` — it is not directly reachable from outside
+- Access the dashboard remotely via one of the methods below
+
+### Accessing the dashboard remotely
+
+**Option A — SSH tunnel (simplest)**
+
+```bash
+# From your local machine:
+ssh -L 8501:127.0.0.1:8501 user@your-vps-ip
+# Then open http://localhost:8501 in your browser
+```
+
+**Option B — Tailscale**
+
+Install Tailscale on both your VPS and local machine. Once connected, the VPS's
+Tailscale IP can reach the dashboard at `http://<tailscale-ip>:8501`. No tunnel needed.
+Make sure the dashboard is reachable only on the Tailscale interface (or keep it
+on `127.0.0.1` and use an SSH tunnel via the Tailscale IP).
+
+**Option C — Authenticated reverse proxy (Caddy / nginx + auth)**
+
+Put a reverse proxy with authentication in front of port 8501. Example with Caddy:
+
+```caddyfile
+dashboard.yourdomain.com {
+    basicauth {
+        admin <hashed_password>
+    }
+    reverse_proxy 127.0.0.1:8501
+}
+```
 
 ### Setup
 
@@ -99,19 +172,22 @@ cp .env.example .env
 #   - Set DASHBOARD_PASSWORD to a strong password
 #   - Set ANTHROPIC_API_KEY (or another AI provider)
 #   - Set OUTPUT_DIR to a persistent volume path (e.g. /data/syshunt)
+chmod 600 .env
 ```
 
-### Start all services
+### Start all services (VPS-safe)
 
 ```bash
 make up-all
 ```
 
 This starts all services defined in `docker-compose.yml`:
-- `db` — PostgreSQL
-- `redis` — Redis (Celery broker)
+- `db` — PostgreSQL (internal only, not exposed)
+- `redis` — Redis (internal only, not exposed)
 - `worker` — Celery worker (runs the pipeline)
-- `dashboard` — Streamlit dashboard
+- `beat` — Celery Beat scheduler
+- `flower` — Queue monitor (internal only, access via SSH tunnel)
+- `dashboard` — Streamlit dashboard (bound to `127.0.0.1:8501`)
 
 ### Run migrations inside the container
 
@@ -121,10 +197,14 @@ docker compose exec worker alembic upgrade head
 
 ### Monitor queues (Flower)
 
+Flower runs internally. Access it via SSH tunnel:
+
 ```bash
-make flower
-# Or access http://localhost:5555 (only from localhost or through a secure tunnel)
+ssh -L 5555:127.0.0.1:5555 user@your-vps-ip
+# Then open http://localhost:5555
 ```
+
+Or use `make up-local` on a development machine to expose it directly.
 
 ---
 
@@ -132,8 +212,9 @@ make flower
 
 | Command | Description |
 |---------|-------------|
-| `make up` | Start PostgreSQL and Redis only (notebook mode) |
-| `make up-all` | Start all services including worker and dashboard |
+| `make up` | Start PostgreSQL and Redis only (notebook mode, no port exposure) |
+| `make up-local` | Start all services with local port bindings (development only) |
+| `make up-all` | Start all services without exposing internal ports (VPS / production) |
 | `make down` | Stop all services |
 | `make migrate` | Apply Alembic database migrations |
 | `make migrate-new MSG="description"` | Generate a new migration |
@@ -190,7 +271,7 @@ Configure providers in the **Settings** page of the dashboard.
 Key variables from `.env.example`:
 
 ```bash
-DATABASE_URL=postgresql://user:pass@localhost:5432/syshunt
+DATABASE_URL=postgresql://user:pass@localhost:5432/bughunter
 REDIS_URL=redis://localhost:6379/0
 
 # AI (at least one is required for AI classification)

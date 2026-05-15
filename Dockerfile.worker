@@ -17,6 +17,11 @@ RUN apt-get update \
         nmap \
     && rm -rf /var/lib/apt/lists/*
 
+# Go security tools — currently pinned to @latest.
+# TODO (Fase 3.8 backlog): pin each tool to a specific verified version to prevent
+#   unexpected breakage when upstream APIs change (e.g. CLI flags or output format).
+#   Minimum required: gowitness must be v3+ for `gowitness scan single` syntax.
+#   Track at: https://github.com/sensepost/gowitness/releases
 RUN go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest \
     && go install github.com/projectdiscovery/httpx/cmd/httpx@latest \
     && go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest \
