@@ -381,7 +381,7 @@ Esses itens ficam para Fase 4, Fase 4.5 ou pós-Fase 5.
 
 ---
 
-## FASE 3.8 — AUDITORIA PÓS-3.7 E PREPARAÇÃO REAL PARA FASE 4
+## FASE 3.8 — AUDITORIA PÓS-3.7 E PREPARAÇÃO REAL PARA FASE 4 ✅
 *Objetivo: corrigir inconsistências remanescentes de docs, deploy, performance e contratos antes de iniciar monitoramento automático de plataformas.*
 
 ### Grupo A — Documentação e contratos
@@ -440,35 +440,35 @@ Esses itens ficam para Fase 4, Fase 4.5 ou pós-Fase 5.
   - aplicado em `create_target` e `bulk_create_targets`;
   - permitir apenas se `ALLOW_LOCAL_TARGETS=true`.
 
-### Grupo D — Estados de falha e resiliência
+### Grupo D — Estados de falha e resiliência ✅
 
-- [ ] Adicionar estados opcionais:
-  - `recon_failed`;
-  - `analysis_failed`.
-- [ ] Garantir que `run_ai_analysis()` não deixa target preso em `analysis_running` se falhar.
-- [ ] Garantir que falha ao enfileirar pipeline não deixa target preso em `recon_running`.
-- [ ] Integrar `notify_pipeline_error()` a falhas críticas.
-- [ ] Definir retry/backoff mínimo para tasks de rede ou registrar como Fase 4.5.
+- [x] Adicionar estados opcionais:
+  - `recon_failed` — setado por `run_full_pipeline` quando dispatch falha;
+  - `analysis_failed` — setado por `run_ai_analysis` quando exceção não tratada.
+- [x] Garantir que `run_ai_analysis()` não deixa target preso em `analysis_running` se falhar.
+- [x] Garantir que falha ao enfileirar pipeline não deixa target preso em `recon_running`.
+- [x] Integrar `notify_pipeline_error()` a falhas críticas (implementada em `core/notifications.py`).
+- [x] Retry/backoff: registrado como Fase 4.5 — não necessário antes da Fase 4.
+- [x] Dashboard target status filter inclui `recon_failed` e `analysis_failed`.
 
-### Grupo E — Validação de promessas de pipeline
+### Grupo E — Validação de promessas de pipeline ✅
 
-- [ ] Verificar se recon recursivo está realmente conectado ao pipeline principal.
-- [ ] Se não estiver, atualizar SPEC/ROADMAP ou conectar corretamente.
-- [ ] Verificar se Amass está integrado; se não, mover promessa para backlog.
-- [ ] Verificar se ffuf está integrado; se não, mover promessa para backlog.
-- [ ] Criar `docs/current_pipeline.md` com o fluxo real executado hoje.
+- [x] Recon recursivo: **não conectado ao pipeline principal** — disponível via `run_recursive_subdomain_enum_task` Celery task mas não auto-triggerado; documentado em `docs/current_pipeline.md`.
+- [x] Amass: **não integrado** — wrapper não existe; apenas subfinder roda no pipeline principal; atualizado em `docs/current_pipeline.md`.
+- [x] ffuf: **wrapper existe** (`tools/ffuf_wrapper.py`) mas **sem task Celery** — movido para backlog.
+- [x] Criado `docs/current_pipeline.md` com fluxo real executado, ferramentas ausentes, estados de falha e máquina de estados.
 
-### Critério de saída
+### Critério de saída ✅
 
-- [ ] `pytest` passando.
-- [ ] `SPEC.md` renderiza corretamente.
-- [ ] `CLAUDE.md` reflete estado pós-3.7.
-- [ ] Compose seguro para VPS existe.
-- [ ] Findings paginam no banco.
-- [ ] Provider/Redis não são resolvidos por finding.
-- [ ] Settings Page usa sessões curtas.
-- [ ] Targets locais/privados são bloqueados por padrão.
-- [ ] Fase 4 pode começar sem carregar dívida de operabilidade.
+- [x] `pytest` passando.
+- [x] `SPEC.md` renderiza corretamente.
+- [x] `CLAUDE.md` reflete estado pós-3.7.
+- [x] Compose seguro para VPS existe.
+- [x] Findings paginam no banco.
+- [x] Provider/Redis não são resolvidos por finding.
+- [x] Settings Page usa sessões curtas.
+- [x] Targets locais/privados são bloqueados por padrão.
+- [x] Fase 4 pode começar sem carregar dívida de operabilidade.
 
 ---
 
@@ -753,3 +753,4 @@ Ao final:
 | 2026-05-15 | Auditoria pós-3.7 | 3.7 validada em grande parte; encontrados problemas remanescentes em SPEC.md, CLAUDE.md, compose exposto, paginação em memória, provider por finding, settings session longa e ALLOW_LOCAL_TARGETS não implementado. Criada Fase 3.8 antes da Fase 4. | Fase 3.8 |
 | 2026-05-15 | 3.8 Grupo B | Compose seguro: removidas portas de db/redis/flower, dashboard em 127.0.0.1. Criado docker-compose.local.yml. Makefile: up-local. README: local vs VPS, SSH tunnel, Tailscale, Caddy. Dockerfile.worker: comentário sobre pinagem de versões Go. | Grupos C/D/E da 3.8 |
 | 2026-05-15 | 3.8 Grupo C | Paginação real: list_findings/count_findings com SQL limit/offset e ilike search. Dashboard findings: count+page query. classify_finding: provider/redis_client opcionais (sentinel). run_ai_analysis: provider+redis resolvidos uma vez. Settings page: _read_settings/_write_settings com sessões curtas. ALLOW_LOCAL_TARGETS: bloqueia localhost/private/link-local por padrão. 342 testes passando. | Grupos D/E da 3.8 |
+| 2026-05-15 | 3.8 Grupos D/E ✅ | run_ai_analysis: try/except → analysis_failed + notify_pipeline_error. run_full_pipeline: try/except → recon_failed + notify_pipeline_error. Dashboard: recon_failed/analysis_failed nos filtros de status. docs/current_pipeline.md: pipeline real documentado. Amass não integrado (só subfinder). ffuf wrapper existe mas sem task Celery (backlog). Recon recursivo existe mas não auto-triggerado. ROADMAP.md: Fase 3.8 encerrada. | Fase 4 — Monitoramento de Plataformas |

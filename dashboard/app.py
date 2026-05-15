@@ -291,6 +291,8 @@ def _render_target_list() -> None:
             "recon_running",
             "analysis_running",
             "recon_done",
+            "recon_failed",
+            "analysis_failed",
             "ready_for_review",
             "archived",
         ],

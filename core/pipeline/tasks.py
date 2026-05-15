@@ -466,7 +466,8 @@ def run_ai_analysis(target_id: int, limit: int | None = None, force_reanalyze: b
     When *force_reanalyze* is True, the Redis cache is bypassed and the AI
     provider is always called fresh.
 
-    Sets target.status = "ready_for_review" when all selected findings are done.
+    Sets target.status = "ready_for_review" on success, "analysis_failed" on
+    unhandled error — the target is never left stuck in "analysis_running".
     Provider and Redis client are resolved once per execution, not per finding.
     """
     import time
@@ -474,6 +475,11 @@ def run_ai_analysis(target_id: int, limit: int | None = None, force_reanalyze: b
     log = structlog.get_logger().bind(target_id=target_id, task="run_ai_analysis")
     from core.analysis.classifier import _get_redis, classify_finding
     from core.analysis.provider import get_provider
+    from core.notifications import (
+        notify_high_score_finding,
+        notify_pipeline_error,
+        notify_recon_completed,
+    )
 
     with SessionLocal() as session:
         target = session.get(Target, target_id)
@@ -483,76 +489,87 @@ def run_ai_analysis(target_id: int, limit: int | None = None, force_reanalyze: b
         target.status = "analysis_running"
         session.commit()
 
-        # Determine effective limit: prefer explicit arg, then system_setting
-        effective_limit = limit
-        if effective_limit is None:
-            limit_str = queries.get_setting(session, "ai_analysis_limit")
-            if limit_str:
-                try:
-                    effective_limit = int(limit_str)
-                except ValueError:
-                    log.warning("ai_analysis_limit_invalid", value=limit_str)
+        findings: list[Finding] = []
+        try:
+            # Determine effective limit: prefer explicit arg, then system_setting
+            effective_limit = limit
+            if effective_limit is None:
+                limit_str = queries.get_setting(session, "ai_analysis_limit")
+                if limit_str:
+                    try:
+                        effective_limit = int(limit_str)
+                    except ValueError:
+                        log.warning("ai_analysis_limit_invalid", value=limit_str)
 
-        delay = float(queries.get_setting(session, "ai_call_delay_seconds") or "1")
+            delay = float(queries.get_setting(session, "ai_call_delay_seconds") or "1")
 
-        # Resolve provider and Redis once for the entire run
-        provider = get_provider(session=session)
-        redis_client = _get_redis()
+            # Resolve provider and Redis once for the entire run
+            provider = get_provider(session=session)
+            redis_client = _get_redis()
 
-        base_filters = [
-            Finding.target_id == target_id,
-            Finding.status == "new",
-        ]
-        if not force_reanalyze:
-            # Normal mode: skip already-classified findings
-            base_filters.append(Finding.classifier_used.is_(None))
-        findings_query = (
-            session.query(Finding)
-            .filter(*base_filters)
-            .order_by(Finding.auto_score.desc())
-        )
-        if effective_limit is not None:
-            findings_query = findings_query.limit(effective_limit)
-        findings = findings_query.all()
-
-        for i, finding in enumerate(findings):
-            classify_finding(
-                finding,
-                target,
-                session,
-                force_reanalyze=force_reanalyze,
-                provider=provider,
-                redis_client=redis_client,
-            )
-            if delay > 0 and i < len(findings) - 1:
-                time.sleep(delay)
-
-        target.status = "ready_for_review"
-        session.commit()
-
-        # Collect stats for notifications (after commit, findings are classified)
-        high_critical_count = (
-            session.query(Finding)
-            .filter(
+            base_filters = [
                 Finding.target_id == target_id,
-                Finding.severity.in_(["critical", "high"]),
+                Finding.status == "new",
+            ]
+            if not force_reanalyze:
+                # Normal mode: skip already-classified findings
+                base_filters.append(Finding.classifier_used.is_(None))
+            findings_query = (
+                session.query(Finding)
+                .filter(*base_filters)
+                .order_by(Finding.auto_score.desc())
             )
-            .count()
-        )
-        total_findings = session.query(Finding).filter(Finding.target_id == target_id).count()
+            if effective_limit is not None:
+                findings_query = findings_query.limit(effective_limit)
+            findings = findings_query.all()
 
-        # Notify high-score findings (score >= 80) classified in this run
-        from core.notifications import notify_high_score_finding, notify_recon_completed
+            for i, finding in enumerate(findings):
+                classify_finding(
+                    finding,
+                    target,
+                    session,
+                    force_reanalyze=force_reanalyze,
+                    provider=provider,
+                    redis_client=redis_client,
+                )
+                if delay > 0 and i < len(findings) - 1:
+                    time.sleep(delay)
 
-        for finding in findings:
-            if (finding.auto_score or 0) >= 80:
-                notify_high_score_finding(finding, target, session=session)
+            target.status = "ready_for_review"
+            session.commit()
 
-        notify_recon_completed(
-            target,
-            {"findings": total_findings, "high_critical": high_critical_count},
-            session=session,
-        )
+            # Collect stats for notifications (after commit, findings are classified)
+            high_critical_count = (
+                session.query(Finding)
+                .filter(
+                    Finding.target_id == target_id,
+                    Finding.severity.in_(["critical", "high"]),
+                )
+                .count()
+            )
+            total_findings = (
+                session.query(Finding).filter(Finding.target_id == target_id).count()
+            )
+
+            for finding in findings:
+                if (finding.auto_score or 0) >= 80:
+                    notify_high_score_finding(finding, target, session=session)
+
+            notify_recon_completed(
+                target,
+                {"findings": total_findings, "high_critical": high_critical_count},
+                session=session,
+            )
+
+        except Exception as exc:
+            log.error("ai_analysis_failed", error=str(exc))
+            try:
+                target.status = "analysis_failed"
+                session.commit()
+            except Exception:
+                pass
+            notify_pipeline_error(target_id, "run_ai_analysis", str(exc), session=session)
+            return {"target_id": target_id, "classified": len(findings), "error": str(exc)}
 
     log.info("ai_analysis_completed", classified=len(findings))
     return {"target_id": target_id, "classified": len(findings)}
@@ -720,18 +737,39 @@ def run_full_pipeline(target_id: int, skip_recon: bool = False) -> dict[str, int
 
     log.info("pipeline_started")
 
-    if skip_recon:
-        result = run_nuclei_scan.apply_async(args=[target_id])
-    else:
-        result = chain(
-            run_subdomain_enum.si(target_id),
-            run_dnsx_filter.si(target_id),
-            run_http_probe.si(target_id),
-            run_port_scan.si(target_id),
-            run_web_crawl.si(target_id),
-            run_screenshot.si(target_id),
-            run_nuclei_scan.si(target_id),
-        ).apply_async()
+    from core.notifications import notify_pipeline_error
+
+    try:
+        if skip_recon:
+            result = run_nuclei_scan.apply_async(args=[target_id])
+        else:
+            result = chain(
+                run_subdomain_enum.si(target_id),
+                run_dnsx_filter.si(target_id),
+                run_http_probe.si(target_id),
+                run_port_scan.si(target_id),
+                run_web_crawl.si(target_id),
+                run_screenshot.si(target_id),
+                run_nuclei_scan.si(target_id),
+            ).apply_async()
+    except Exception as exc:
+        log.error("pipeline_dispatch_failed", error=str(exc))
+        try:
+            with SessionLocal() as session:
+                target = session.get(Target, target_id)
+                if target is not None:
+                    target.status = "recon_failed"
+                    session.commit()
+        except Exception:
+            pass
+        notify_pipeline_error(target_id, "run_full_pipeline", str(exc))
+        return {
+            "target_id": target_id,
+            "workflow_id": "",
+            "status": "failed",
+            "skip_recon": skip_recon,
+            "error": str(exc),
+        }
 
     return {
         "target_id": target_id,

@@ -146,5 +146,25 @@ def notify_pipeline_error(
     target_id: int,
     task_name: str,
     error: str,
+    session: object = None,
 ) -> None:
-    """Stub — can be wired to a Celery error handler in a future phase."""
+    """Send a pipeline-error notification to Discord. Never raises.
+
+    Respects the ``notify_pipeline_error`` system setting flag.
+    *session* is optional; when None, webhook URL falls back to env var.
+    """
+    try:
+        if not _get_flag(session, "notify_pipeline_error"):
+            return
+        webhook_url = _get_webhook_url(session)
+        if not webhook_url:
+            return
+        content = (
+            "⚠️ [PIPELINE ERROR]\n"
+            f"Target ID: {target_id}\n"
+            f"Task: {task_name}\n"
+            f"Error: {str(error)[:300]}"
+        )
+        _post_discord(webhook_url, content)
+    except Exception as exc:
+        _log.warning("notify_pipeline_error_failed", error=str(exc))
