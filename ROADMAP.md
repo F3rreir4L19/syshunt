@@ -238,10 +238,10 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 
 ---
 
-## FASE 3.7 — OPERABILIDADE REAL + HARDENING MÍNIMO
+## FASE 3.7 — OPERABILIDADE REAL + HARDENING MÍNIMO ✅
 *Objetivo: transformar o Syshunt de “pipeline implementado” em ferramenta usável no dia a dia, segura para notebook e VPS protegida.*
 
-Pré-requisito para Fase 4: concluir esta fase.
+Pré-requisito para Fase 4: concluir esta fase. **CONCLUÍDA — 307 testes passando.**
 
 ### Grupo A — Operabilidade mínima ✅
 
@@ -378,15 +378,15 @@ Esses itens ficam para Fase 4, Fase 4.5 ou pós-Fase 5.
 
 ### Critério de saída
 
-- [ ] `pytest` passando.
-- [ ] Dashboard protegido por senha quando `DASHBOARD_PASSWORD` definido.
-- [ ] Recon pode ser disparado pela UI.
-- [ ] Target pode ser criado com scope/platform/depth.
-- [ ] `analysis_running` aparece corretamente.
-- [ ] Re-scan não duplica findings.
-- [ ] Discord notifica conclusão de recon.
-- [ ] Findings podem ser exportados.
-- [ ] README permite rodar o projeto do zero.
+- [x] `pytest` passando (307 testes, 1 skipped docker integration).
+- [x] Dashboard protegido por senha quando `DASHBOARD_PASSWORD` definido.
+- [x] Recon pode ser disparado pela UI (Start Recon + Re-scan rápido).
+- [x] Target pode ser criado com scope/platform/depth.
+- [x] `analysis_running` aparece corretamente.
+- [x] Re-scan não duplica findings.
+- [x] Discord notifica conclusão de recon.
+- [x] Findings podem ser exportados (CSV + Markdown).
+- [x] README permite rodar o projeto do zero.
 
 
 
@@ -417,9 +417,10 @@ Esses itens ficam para Fase 4, Fase 4.5 ou pós-Fase 5.
 - [ ] Task: `trigger_recon_for_new_program(program_id)`
 
 ### Notificações Discord
-- [ ] `core/notifications.py` — webhook Discord
-- [ ] Formatos de mensagem para cada tipo de evento
-- [ ] Configuração no dashboard
+- [x] `core/notifications.py` — webhook Discord (criado na Fase 3.7)
+- [x] Formatos de mensagem para `recon_completed` e `high_score_finding` (Fase 3.7)
+- [x] Configuração no dashboard — seção Notifications na página Settings (Fase 3.7)
+- [ ] Formatos de mensagem para `new_program` e `scope_changed` (Fase 4 — stubs existem)
 
 ### Dashboard — Fase 4
 - [ ] Página Programs completa
@@ -485,3 +486,4 @@ Funcionalidades desejáveis mas não essenciais para v1:
 | 2026-05-14 | 3.5 | provider.py refatorado (api_key nos construtores, get_provider(session)), classify_finding(force_reanalyze), run_dnsx_filter try/except, run_ai_analysis (force_reanalyze+delay+remove os.environ), set_setting merge+flush, Target.auto_analyze+migration 0004, run_nuclei_scan auto_analyze check, template_generator yaml.safe_load, pyproject.toml pyyaml+openai opcional, Dockerfile.worker dnsx+chromium, dashboard Re-analyze+AI delay+auto_analyze settings, 20 novos testes (234 total) | Fase 4 — Monitoramento de Plataformas |
 | 2026-05-15 | Análise | Auditoria combinada pós-3.5: maioria dos achados do Claude validada; removidos exageros/itens incorretos; criada Fase 3.6 para docs e Fase 3.7 para operabilidade antes da Fase 4. | Fase 3.6 e 3.7 |
 | 2026-05-15 | 3.7-C | Grupo C concluído: core/notifications.py (C1), integração notify em run_ai_analysis (C2), export_findings_csv/markdown + dashboard buttons (C3), gowitness v3 scan single (C4), README.md UTF-8 recriado (C5). 307 testes passando. | Fase 4 após Fase 3.7 completa |
+| 2026-05-15 | 3.7 ✅ | Revisão final: todos os 17 critérios de saída confirmados no código. Fase 3.7 encerrada. Próxima: Fase 4 — Monitoramento de Plataformas. | — |
