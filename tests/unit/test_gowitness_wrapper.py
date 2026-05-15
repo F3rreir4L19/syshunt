@@ -7,12 +7,13 @@ from tools.gowitness_wrapper import GoWitnessWrapper
 
 
 def test_gowitness_builds_expected_command(tmp_path: Path) -> None:
+    # gowitness v3+ syntax: scan single
     command = GoWitnessWrapper().build_command(
         "https://example.com", ToolOptions(screenshot_dir=tmp_path)
     )
 
     assert command == [
-        "gowitness", "single",
+        "gowitness", "scan", "single",
         "--url", "https://example.com",
         "--screenshot-path", str(tmp_path),
     ]
@@ -21,6 +22,8 @@ def test_gowitness_builds_expected_command(tmp_path: Path) -> None:
 def test_gowitness_defaults_screenshot_path_when_none() -> None:
     command = GoWitnessWrapper().build_command("https://example.com", ToolOptions())
 
+    assert "scan" in command
+    assert "single" in command
     assert "--screenshot-path" in command
     idx = list(command).index("--screenshot-path")
     assert command[idx + 1] == "screenshots"

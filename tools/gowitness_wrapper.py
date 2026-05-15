@@ -19,9 +19,11 @@ class GoWitnessWrapper(ToolWrapper):
     name = "gowitness"
 
     def build_command(self, target: str, options: ToolOptions) -> Sequence[str]:
+        # gowitness v3+ syntax: `gowitness scan single --url <url> --screenshot-path <dir>`
         screenshot_path = str(options.screenshot_dir or Path("screenshots"))
         return [
             "gowitness",
+            "scan",
             "single",
             "--url", target,
             "--screenshot-path", screenshot_path,

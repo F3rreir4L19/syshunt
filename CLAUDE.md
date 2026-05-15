@@ -500,3 +500,6 @@ ALLOW_LOCAL_TARGETS=false
 | 2026-05-15 | `run_dnsx_filter` retorna shape estável | Evitar que consumidores quebrem em caminhos de erro diferentes |
 | 2026-05-15 | Provider/Redis resolvidos uma vez por análise | Evitar overhead por finding, especialmente com Ollama |
 | 2026-05-15 | Notificações Discord são fire-and-forget | Erro no webhook nunca pode derrubar pipeline |
+| 2026-05-15 | `GoWitnessWrapper` usa sintaxe v3: `gowitness scan single --url ... --screenshot-path ...` | Dockerfile instala `@latest` que é v3+; sintaxe v2 (`gowitness single`) não existe mais |
+| 2026-05-15 | `core/notifications.py` com `notify_recon_completed` e `notify_high_score_finding` integradas em `run_ai_analysis`; stubs para `notify_new_program`, `notify_scope_changed`, `notify_pipeline_error` | Stubs preparam a interface para Fase 4 sem bloquear operação atual |
+| 2026-05-15 | `export_findings_csv` e `export_findings_markdown` em `core/db/queries.py`; dashboard usa `st.download_button` | Export de findings é requisito de operabilidade antes de monitoramento contínuo |

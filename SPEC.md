@@ -109,8 +109,7 @@ Na lista de targets:
 
 ### 2.5 Etapa 5: Screenshots
 **Ferramenta**: gowitness
-O wrapper deve ser compatível com a versão instalada no worker.
-Se o Dockerfile instalar `gowitness@latest` e a versão for v3+, usar sintaxe:
+O Dockerfile instala `gowitness@latest` que é v3+. O wrapper usa a sintaxe v3:
 
 gowitness scan single --url https://example.com --screenshot-path /path
 

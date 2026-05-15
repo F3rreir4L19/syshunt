@@ -11,6 +11,8 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from core.db.queries import (
     bulk_create_targets,
     create_target,
+    export_findings_csv,
+    export_findings_markdown,
     get_finding,
     get_pipeline_status,
     get_setting,
@@ -475,6 +477,51 @@ def _render_findings_filters_and_table() -> None:
         use_container_width=True,
         column_order=["id", "severity", "status", "title", "target", "url", "confidence", "auto_score"],
     )
+
+    # Export buttons
+    st.divider()
+    st.subheader("Export")
+    exp_col1, exp_col2 = st.columns(2)
+    with exp_col1:
+        try:
+            with SessionLocal() as exp_session:
+                csv_data = export_findings_csv(
+                    exp_session,
+                    target_id=selected_target_id,
+                    severities=severity_filter or None,
+                    statuses=status_filter or None,
+                    score_min=score_min,
+                    score_max=score_max,
+                )
+            st.download_button(
+                "Download CSV",
+                data=csv_data,
+                file_name="findings.csv",
+                mime="text/csv",
+                key="export_csv",
+            )
+        except Exception as exc:
+            st.error(f"CSV export failed: {exc.__class__.__name__}")
+    with exp_col2:
+        try:
+            with SessionLocal() as exp_session:
+                md_data = export_findings_markdown(
+                    exp_session,
+                    target_id=selected_target_id,
+                    severities=severity_filter or None,
+                    statuses=status_filter or None,
+                    score_min=score_min,
+                    score_max=score_max,
+                )
+            st.download_button(
+                "Download Markdown",
+                data=md_data,
+                file_name="findings.md",
+                mime="text/markdown",
+                key="export_md",
+            )
+        except Exception as exc:
+            st.error(f"Markdown export failed: {exc.__class__.__name__}")
 
     st.divider()
     st.subheader("Finding Detail")

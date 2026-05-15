@@ -517,6 +517,30 @@ def run_ai_analysis(target_id: int, limit: int | None = None, force_reanalyze: b
         target.status = "ready_for_review"
         session.commit()
 
+        # Collect stats for notifications (after commit, findings are classified)
+        high_critical_count = (
+            session.query(Finding)
+            .filter(
+                Finding.target_id == target_id,
+                Finding.severity.in_(["critical", "high"]),
+            )
+            .count()
+        )
+        total_findings = session.query(Finding).filter(Finding.target_id == target_id).count()
+
+        # Notify high-score findings (score >= 80) classified in this run
+        from core.notifications import notify_high_score_finding, notify_recon_completed
+
+        for finding in findings:
+            if (finding.auto_score or 0) >= 80:
+                notify_high_score_finding(finding, target, session=session)
+
+        notify_recon_completed(
+            target,
+            {"findings": total_findings, "high_critical": high_critical_count},
+            session=session,
+        )
+
     log.info("ai_analysis_completed", classified=len(findings))
     return {"target_id": target_id, "classified": len(findings)}
 

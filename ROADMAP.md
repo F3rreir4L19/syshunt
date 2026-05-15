@@ -320,48 +320,47 @@ Pré-requisito para Fase 4: concluir esta fase.
 ### Grupo C — Uso real
 
 #### C1. Notificações Discord
-- [ ] Criar `core/notifications.py`.
-- [ ] Implementar `notify_recon_completed`.
-- [ ] Implementar `notify_high_score_finding`.
-- [ ] Stubs seguros para `notify_new_program`, `notify_scope_changed`, `notify_pipeline_error`.
-- [ ] Webhook lido de `system_settings.DISCORD_WEBHOOK_URL` com fallback para env var.
-- [ ] Respeitar flags:
+- [x] Criar `core/notifications.py`.
+- [x] Implementar `notify_recon_completed`.
+- [x] Implementar `notify_high_score_finding`.
+- [x] Stubs seguros para `notify_new_program`, `notify_scope_changed`, `notify_pipeline_error`.
+- [x] Webhook lido de `system_settings.DISCORD_WEBHOOK_URL` com fallback para env var.
+- [x] Respeitar flags:
   - `notify_recon_done`
   - `notify_high_score_finding`
-- [ ] Falha nunca propaga.
-- [ ] Testes com mock HTTP: payload correto e falha não quebra.
+- [x] Falha nunca propaga.
+- [x] Testes com mock HTTP: payload correto e falha não quebra.
 
 #### C2. Integrar notificações ao pipeline
-- [ ] Ao fim de `run_ai_analysis`, chamar `notify_recon_completed`.
-- [ ] Para findings com score >= 80, chamar `notify_high_score_finding`.
-- [ ] Testes com mocks.
+- [x] Ao fim de `run_ai_analysis`, chamar `notify_recon_completed`.
+- [x] Para findings com score >= 80, chamar `notify_high_score_finding`.
+- [x] Testes com mocks.
 
 #### C3. Export de findings
-- [ ] `export_findings_csv(session, filters...) -> str`.
-- [ ] `export_findings_markdown(session, filters...) -> str`.
-- [ ] Dashboard com `st.download_button` para CSV.
-- [ ] Dashboard com export/copy Markdown.
-- [ ] Testes: campos principais presentes.
+- [x] `export_findings_csv(session, filters...) -> str`.
+- [x] `export_findings_markdown(session, filters...) -> str`.
+- [x] Dashboard com `st.download_button` para CSV.
+- [x] Dashboard com export/copy Markdown.
+- [x] Testes: campos principais presentes.
 
 #### C4. GoWitness
-- [ ] Testar sintaxe real da versão instalada no `Dockerfile.worker`.
-- [ ] Se for v3+, ajustar para `gowitness scan single --url ...`.
-- [ ] Se necessário, fixar versão no Dockerfile.
-- [ ] Atualizar testes do wrapper.
-- [ ] Garantir que `filename=None` não quebra dashboard.
+- [x] Testar sintaxe real da versão instalada no `Dockerfile.worker`.
+- [x] Ajustado para `gowitness scan single --url ...` (v3+ syntax).
+- [x] Atualizar testes do wrapper.
+- [x] Garantir que `filename=None` não quebra dashboard.
 
 #### C5. README operacional
-- [ ] Recriar `README.md` em UTF-8.
-- [ ] Documentar uso local/notebook.
-- [ ] Documentar uso VPS protegida.
-- [ ] Documentar comandos:
+- [x] Recriar `README.md` em UTF-8.
+- [x] Documentar uso local/notebook.
+- [x] Documentar uso VPS protegida.
+- [x] Documentar comandos:
   - `make up`
   - `make migrate`
   - `make worker`
   - `make dashboard`
   - `make up-all`
-- [ ] Avisar: não rodar scans fora de escopo/autorização.
-- [ ] Avisar: para VPS, usar `DASHBOARD_PASSWORD` e não expor Redis/Postgres/Flower publicamente.
+- [x] Avisar: não rodar scans fora de escopo/autorização.
+- [x] Avisar: para VPS, usar `DASHBOARD_PASSWORD` e não expor Redis/Postgres/Flower publicamente.
 
 ---
 
@@ -485,3 +484,4 @@ Funcionalidades desejáveis mas não essenciais para v1:
 | 2026-05-13 | 2.5+3 | scope validation em tasks, run_dnsx_filter, form validation, SystemSetting, migration 0003, get_setting/set_setting, AIClassifier, classifier.py com Redis cache, template_generator, run_ai_analysis, settings dashboard, AI badges/expanders, Re-analyze button | Interface dashboard para template generator (Fase 5) |
 | 2026-05-14 | 3.5 | provider.py refatorado (api_key nos construtores, get_provider(session)), classify_finding(force_reanalyze), run_dnsx_filter try/except, run_ai_analysis (force_reanalyze+delay+remove os.environ), set_setting merge+flush, Target.auto_analyze+migration 0004, run_nuclei_scan auto_analyze check, template_generator yaml.safe_load, pyproject.toml pyyaml+openai opcional, Dockerfile.worker dnsx+chromium, dashboard Re-analyze+AI delay+auto_analyze settings, 20 novos testes (234 total) | Fase 4 — Monitoramento de Plataformas |
 | 2026-05-15 | Análise | Auditoria combinada pós-3.5: maioria dos achados do Claude validada; removidos exageros/itens incorretos; criada Fase 3.6 para docs e Fase 3.7 para operabilidade antes da Fase 4. | Fase 3.6 e 3.7 |
+| 2026-05-15 | 3.7-C | Grupo C concluído: core/notifications.py (C1), integração notify em run_ai_analysis (C2), export_findings_csv/markdown + dashboard buttons (C3), gowitness v3 scan single (C4), README.md UTF-8 recriado (C5). 307 testes passando. | Fase 4 após Fase 3.7 completa |

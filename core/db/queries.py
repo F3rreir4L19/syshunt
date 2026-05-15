@@ -400,3 +400,93 @@ def insert_recon_results_with_dedup(
                 old.superseded_by = first_new_id
 
     return inserted_data
+
+
+# ---------------------------------------------------------------------------
+# Export helpers
+# ---------------------------------------------------------------------------
+
+_CSV_FIELDS = [
+    "id",
+    "target",
+    "severity",
+    "status",
+    "title",
+    "url",
+    "confidence",
+    "auto_score",
+    "type",
+]
+
+
+def export_findings_csv(
+    session: Session,
+    target_id: int | None = None,
+    severities: list[str] | None = None,
+    statuses: list[str] | None = None,
+    score_min: int = 0,
+    score_max: int = 100,
+) -> str:
+    """Return findings as a CSV string with the canonical set of fields."""
+    import csv
+    import io
+
+    rows = list_findings(
+        session,
+        target_id=target_id,
+        severities=severities,
+        statuses=statuses,
+        score_min=score_min,
+        score_max=score_max,
+    )
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=_CSV_FIELDS, extrasaction="ignore")
+    writer.writeheader()
+    writer.writerows(rows)
+    return buf.getvalue()
+
+
+def export_findings_markdown(
+    session: Session,
+    target_id: int | None = None,
+    severities: list[str] | None = None,
+    statuses: list[str] | None = None,
+    score_min: int = 0,
+    score_max: int = 100,
+) -> str:
+    """Return findings as a Markdown document suitable for manual review."""
+    rows = list_findings(
+        session,
+        target_id=target_id,
+        severities=severities,
+        statuses=statuses,
+        score_min=score_min,
+        score_max=score_max,
+    )
+    if not rows:
+        return "# Findings\n\n_No findings match the current filters._\n"
+
+    lines: list[str] = ["# Findings\n"]
+    for f in rows:
+        sev = str(f.get("severity", "")).upper()
+        title = f.get("title", "")
+        target = f.get("target", "")
+        url = f.get("url", "")
+        score = f.get("auto_score", 0)
+        confidence = f.get("confidence", "")
+        status = f.get("status", "")
+        ftype = f.get("type", "")
+        desc = f.get("description", "")
+
+        lines.append(f"## [{sev}] {title}")
+        lines.append(f"- **Target:** {target}")
+        lines.append(f"- **URL:** {url}")
+        lines.append(f"- **Type:** {ftype}")
+        lines.append(f"- **Score:** {score}/100")
+        lines.append(f"- **Confidence:** {confidence}")
+        lines.append(f"- **Status:** {status}")
+        if desc:
+            lines.append(f"\n{desc}")
+        lines.append("")
+
+    return "\n".join(lines)
