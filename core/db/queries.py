@@ -38,12 +38,29 @@ def normalize_domain(domain: str) -> str:
     return cleaned
 
 
-def create_target(session: Session, domain: str, auto_analyze: bool = True) -> Target:
+def create_target(
+    session: Session,
+    domain: str,
+    auto_analyze: bool = True,
+    scope_includes: list[str] | None = None,
+    scope_excludes: list[str] | None = None,
+    platform: str | None = None,
+    program_id: str | None = None,
+    recon_depth: int = 2,
+) -> Target:
     normalized = normalize_domain(domain)
     if not normalized:
         raise ValueError("Domain is required.")
 
-    target = Target(domain=normalized, scope_includes=[normalized], auto_analyze=auto_analyze)
+    target = Target(
+        domain=normalized,
+        scope_includes=scope_includes if scope_includes is not None else [normalized],
+        scope_excludes=scope_excludes if scope_excludes is not None else [],
+        auto_analyze=auto_analyze,
+        platform=platform,
+        program_id=program_id,
+        recon_depth=recon_depth,
+    )
     session.add(target)
     session.commit()
     session.refresh(target)

@@ -476,6 +476,9 @@ def run_ai_analysis(target_id: int, limit: int | None = None, force_reanalyze: b
         if target is None:
             raise ValueError(f"Target {target_id} not found")
 
+        target.status = "analysis_running"
+        session.commit()
+
         # Determine effective limit: prefer explicit arg, then system_setting
         effective_limit = limit
         if effective_limit is None:

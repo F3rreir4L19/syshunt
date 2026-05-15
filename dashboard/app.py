@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hmac
 import io
 import os
 
@@ -18,9 +19,8 @@ from core.db.queries import (
     list_targets,
     normalize_domain,
 )
-from core.pipeline.tasks import run_ai_analysis
 from core.db.session import SessionLocal
-from core.pipeline.tasks import celery_app
+from core.pipeline.tasks import celery_app, run_ai_analysis, run_full_pipeline
 
 
 PAGE_TARGETS = "Targets"
@@ -28,9 +28,65 @@ PAGE_FINDINGS = "Findings"
 PAGE_PROGRAMS = "Programs"
 PAGE_SETTINGS = "Settings"
 
+_RUNNING_STATUSES = {"recon_running", "analysis_running"}
+
 
 def _output_dir() -> str:
     return os.getenv("OUTPUT_DIR", "/tmp/syshunt")
+
+
+# ---------------------------------------------------------------------------
+# Authentication
+# ---------------------------------------------------------------------------
+
+
+def _check_password(provided: str, expected: str) -> bool:
+    """Constant-time password comparison. Testable without Streamlit."""
+    return hmac.compare_digest(provided.encode("utf-8"), expected.encode("utf-8"))
+
+
+def _require_auth() -> bool:
+    """Return True when the user may access the dashboard.
+
+    If DASHBOARD_PASSWORD is unset, access is allowed with a local-mode warning.
+    If set, a password form is shown and `st.session_state.authenticated` is used
+    to persist the login within the Streamlit session.
+    """
+    password = os.getenv("DASHBOARD_PASSWORD", "")
+    if not password:
+        st.warning(
+            "Running in local mode — no DASHBOARD_PASSWORD set. "
+            "Set DASHBOARD_PASSWORD to protect this dashboard."
+        )
+        return True
+    if st.session_state.get("authenticated"):
+        return True
+    st.title("Syshunt — Login")
+    pwd = st.text_input("Password", type="password", key="login_input")
+    if st.button("Login"):
+        if _check_password(pwd, password):
+            st.session_state["authenticated"] = True
+            st.rerun()
+        else:
+            st.error("Incorrect password.")
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Recon dispatch helpers (extracted for testability)
+# ---------------------------------------------------------------------------
+
+
+def _start_recon(target_id: int) -> str:
+    """Dispatch run_full_pipeline for *target_id*. Returns task ID."""
+    result = run_full_pipeline.apply_async(args=[target_id])
+    return result.id or ""
+
+
+def _start_rescan(target_id: int) -> str:
+    """Dispatch nuclei-only re-scan for *target_id*. Returns task ID."""
+    result = run_full_pipeline.apply_async(args=[target_id], kwargs={"skip_recon": True})
+    return result.id or ""
 
 
 def configure_page() -> None:
@@ -106,7 +162,33 @@ def render_targets_page() -> None:
                 ).lower() == "true"
 
                 with st.form("add-target", clear_on_submit=True):
-                    domain = st.text_input("Domain", placeholder="example.com")
+                    domain = st.text_input("Domain *", placeholder="example.com")
+                    col_scope_inc, col_scope_exc = st.columns(2)
+                    with col_scope_inc:
+                        scope_includes_str = st.text_area(
+                            "Scope includes (one per line)",
+                            placeholder="*.example.com\nexample.com",
+                            help="Default: the domain itself. Each line is a pattern.",
+                        )
+                    with col_scope_exc:
+                        scope_excludes_str = st.text_area(
+                            "Scope excludes (one per line)",
+                            placeholder="dev.example.com\nstaging.example.com",
+                            help="Patterns that are always out-of-scope (overrides includes).",
+                        )
+                    col_plat, col_prog, col_depth = st.columns(3)
+                    with col_plat:
+                        platform = st.selectbox(
+                            "Platform",
+                            ["", "hackerone", "bugcrowd", "intigriti", "private"],
+                            index=0,
+                        )
+                    with col_prog:
+                        program_id = st.text_input("Program ID", placeholder="h1-example")
+                    with col_depth:
+                        recon_depth = st.number_input(
+                            "Recon depth", min_value=1, max_value=3, value=2
+                        )
                     auto_analyze = st.checkbox(
                         "Auto-analyze with AI after recon",
                         value=auto_analyze_default,
@@ -118,12 +200,31 @@ def render_targets_page() -> None:
                         st.error("Domain is required.")
                     else:
                         try:
-                            normalize_domain(domain)
+                            normalized = normalize_domain(domain)
                         except ValueError as exc:
                             st.error(f"Invalid domain: {exc}")
                         else:
+                            scope_includes = [
+                                s.strip()
+                                for s in scope_includes_str.splitlines()
+                                if s.strip()
+                            ] or None
+                            scope_excludes = [
+                                s.strip()
+                                for s in scope_excludes_str.splitlines()
+                                if s.strip()
+                            ]
                             try:
-                                create_target(session, domain, auto_analyze=auto_analyze)
+                                create_target(
+                                    session,
+                                    domain,
+                                    auto_analyze=auto_analyze,
+                                    scope_includes=scope_includes,
+                                    scope_excludes=scope_excludes,
+                                    platform=platform or None,
+                                    program_id=program_id.strip() or None,
+                                    recon_depth=int(recon_depth),
+                                )
                                 st.success("Target added.")
                             except ValueError as exc:
                                 st.error(str(exc))
@@ -176,7 +277,14 @@ def _render_target_list() -> None:
 
     status_filter = st.multiselect(
         "Filter by status",
-        ["pending", "recon_running", "recon_done", "ready_for_review", "archived"],
+        [
+            "pending",
+            "recon_running",
+            "analysis_running",
+            "recon_done",
+            "ready_for_review",
+            "archived",
+        ],
         default=[],
         key="targets_status_filter",
     )
@@ -190,6 +298,58 @@ def _render_target_list() -> None:
         column_order=["id", "domain", "status", "platform", "recon_depth", "last_recon_at"],
     )
 
+    # ------------------------------------------------------------------
+    # Recon controls
+    # ------------------------------------------------------------------
+    st.divider()
+    st.subheader("Recon Controls")
+    if targets:
+        all_targets_for_recon: list[dict] = []
+        try:
+            with SessionLocal() as session:
+                all_targets_for_recon = list_targets(session)
+        except SQLAlchemyError:
+            pass
+
+        if all_targets_for_recon:
+            recon_options = {
+                f"{t['domain']} (id={t['id']})": t for t in all_targets_for_recon
+            }
+            recon_label = st.selectbox(
+                "Select target", list(recon_options.keys()), key="recon_target_select"
+            )
+            if recon_label:
+                sel = recon_options[recon_label]
+                is_running = sel["status"] in _RUNNING_STATUSES
+                if is_running:
+                    st.info(f"Pipeline already running for {sel['domain']} (status: {sel['status']}).")
+                col_start, col_rescan = st.columns(2)
+                with col_start:
+                    if st.button(
+                        "Start Recon",
+                        disabled=is_running,
+                        key=f"start_recon_{sel['id']}",
+                    ):
+                        try:
+                            _start_recon(int(sel["id"]))
+                            st.success(f"Recon pipeline enqueued for {sel['domain']}.")
+                        except Exception as exc:
+                            st.error(f"Could not start recon: {exc}")
+                with col_rescan:
+                    if st.button(
+                        "Re-scan rápido (nuclei only)",
+                        disabled=is_running,
+                        key=f"rescan_{sel['id']}",
+                    ):
+                        try:
+                            _start_rescan(int(sel["id"]))
+                            st.success(f"Re-scan enqueued for {sel['domain']}.")
+                        except Exception as exc:
+                            st.error(f"Could not start re-scan: {exc}")
+
+    # ------------------------------------------------------------------
+    # Screenshots
+    # ------------------------------------------------------------------
     st.divider()
     st.subheader("Screenshots")
     if targets:
@@ -618,6 +778,8 @@ def render_page(page: str) -> None:
 
 def main() -> None:
     configure_page()
+    if not _require_auth():
+        return
     selected_page = render_sidebar()
     render_page(selected_page)
 

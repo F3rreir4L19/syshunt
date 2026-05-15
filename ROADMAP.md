@@ -243,38 +243,38 @@ Se precisar de decisão arquitetural, registre no CLAUDE.md antes de implementar
 
 Pré-requisito para Fase 4: concluir esta fase.
 
-### Grupo A — Operabilidade mínima
+### Grupo A — Operabilidade mínima ✅
 
 #### A1. Autenticação básica no dashboard
-- [ ] Implementar verificação de `DASHBOARD_PASSWORD` antes de renderizar sidebar/páginas.
-- [ ] Se `DASHBOARD_PASSWORD` vazio: permitir acesso local e mostrar warning.
-- [ ] Se definido: exigir senha via Streamlit e guardar `authenticated` em `st.session_state`.
-- [ ] Usar comparação segura.
-- [ ] Testes: senha correta, senha incorreta, env vazia.
+- [x] Implementar verificação de `DASHBOARD_PASSWORD` antes de renderizar sidebar/páginas.
+- [x] Se `DASHBOARD_PASSWORD` vazio: permitir acesso local e mostrar warning.
+- [x] Se definido: exigir senha via Streamlit e guardar `authenticated` em `st.session_state`.
+- [x] Usar comparação segura (`hmac.compare_digest`); `_check_password` separada e testável.
+- [x] Testes: senha correta, senha incorreta, env vazia (4 testes).
 
 #### A2. Botões Start Recon e Re-scan rápido
-- [ ] Importar `run_full_pipeline` no dashboard.
-- [ ] Adicionar botão `Start Recon` por target.
-- [ ] Adicionar botão `Re-scan rápido` por target com `skip_recon=True`.
-- [ ] Desabilitar botões se status em `recon_running` ou `analysis_running`.
-- [ ] Exibir mensagem de pipeline enfileirado.
-- [ ] Testes: mock de `apply_async`, target_id correto, skip_recon correto.
+- [x] Importar `run_full_pipeline` no dashboard.
+- [x] Adicionar botão `Start Recon` por target.
+- [x] Adicionar botão `Re-scan rápido` por target com `skip_recon=True`.
+- [x] Desabilitar botões se status em `recon_running` ou `analysis_running`.
+- [x] Exibir mensagem de pipeline enfileirado.
+- [x] Testes: mock de `apply_async`, target_id correto, skip_recon correto (4 testes).
 
 #### A3. Formulário Add Target completo
-- [ ] Campos: `domain`, `scope_includes`, `scope_excludes`, `platform`, `program_id`, `recon_depth`, `auto_analyze`.
-- [ ] Atualizar `create_target()` para aceitar esses campos.
-- [ ] Defaults:
+- [x] Campos: `domain`, `scope_includes`, `scope_excludes`, `platform`, `program_id`, `recon_depth`, `auto_analyze`.
+- [x] Atualizar `create_target()` para aceitar esses campos.
+- [x] Defaults:
   - `scope_includes = [domain]`
   - `scope_excludes = []`
   - `recon_depth = 2`
-- [ ] Testes: target criado com scope/platform/depth customizados.
+- [x] Testes: target criado com scope/platform/depth customizados (5 testes).
 
 #### A4. Status `analysis_running`
-- [ ] `run_ai_analysis` seta `target.status = "analysis_running"` ao iniciar.
-- [ ] Commit imediato após alterar status.
-- [ ] Ao fim, `target.status = "ready_for_review"`.
-- [ ] Dashboard inclui `analysis_running` no filtro/lista de status.
-- [ ] Testes: transição `recon_done → analysis_running → ready_for_review`.
+- [x] `run_ai_analysis` seta `target.status = "analysis_running"` ao iniciar.
+- [x] Commit imediato após alterar status.
+- [x] Ao fim, `target.status = "ready_for_review"`.
+- [x] Dashboard inclui `analysis_running` no filtro/lista de status.
+- [x] Testes: transição `recon_done → analysis_running → ready_for_review` (4 testes).
 
 ---
 
