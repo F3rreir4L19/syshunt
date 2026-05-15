@@ -57,7 +57,7 @@ def _add_subdomains(sf: sessionmaker[Session], target_id: int, domains: list[str
         session.commit()
 
 
-def _noop_classify(finding, target, session, force_reanalyze: bool = False) -> None:
+def _noop_classify(finding, target, session, force_reanalyze: bool = False, **kwargs) -> None:
     finding.classifier_used = "heuristic"
     finding.confidence = "possible"
     finding.confidence_note = "test"
@@ -198,7 +198,7 @@ class TestForceReanalyze:
 
         classified_ids: list[int] = []
 
-        def track(finding, target, session, force_reanalyze: bool = False) -> None:
+        def track(finding, target, session, force_reanalyze: bool = False, **kwargs) -> None:
             classified_ids.append(finding.id)
             finding.classifier_used = "heuristic"
 
@@ -231,7 +231,7 @@ class TestForceReanalyze:
 
         classified_ids: list[int] = []
 
-        def track(finding, target, session, force_reanalyze: bool = False) -> None:
+        def track(finding, target, session, force_reanalyze: bool = False, **kwargs) -> None:
             classified_ids.append(finding.id)
 
         with patch("core.analysis.classifier.classify_finding", side_effect=track):
@@ -261,7 +261,7 @@ class TestForceReanalyze:
 
         classified: list[int] = []
 
-        def track(finding, target, session, force_reanalyze: bool = False) -> None:
+        def track(finding, target, session, force_reanalyze: bool = False, **kwargs) -> None:
             classified.append(finding.id)
             finding.classifier_used = "heuristic"
 

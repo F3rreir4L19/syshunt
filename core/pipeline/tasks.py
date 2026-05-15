@@ -467,11 +467,13 @@ def run_ai_analysis(target_id: int, limit: int | None = None, force_reanalyze: b
     provider is always called fresh.
 
     Sets target.status = "ready_for_review" when all selected findings are done.
+    Provider and Redis client are resolved once per execution, not per finding.
     """
     import time
 
     log = structlog.get_logger().bind(target_id=target_id, task="run_ai_analysis")
-    from core.analysis.classifier import classify_finding
+    from core.analysis.classifier import _get_redis, classify_finding
+    from core.analysis.provider import get_provider
 
     with SessionLocal() as session:
         target = session.get(Target, target_id)
@@ -493,6 +495,10 @@ def run_ai_analysis(target_id: int, limit: int | None = None, force_reanalyze: b
 
         delay = float(queries.get_setting(session, "ai_call_delay_seconds") or "1")
 
+        # Resolve provider and Redis once for the entire run
+        provider = get_provider(session=session)
+        redis_client = _get_redis()
+
         base_filters = [
             Finding.target_id == target_id,
             Finding.status == "new",
@@ -510,7 +516,14 @@ def run_ai_analysis(target_id: int, limit: int | None = None, force_reanalyze: b
         findings = findings_query.all()
 
         for i, finding in enumerate(findings):
-            classify_finding(finding, target, session, force_reanalyze=force_reanalyze)
+            classify_finding(
+                finding,
+                target,
+                session,
+                force_reanalyze=force_reanalyze,
+                provider=provider,
+                redis_client=redis_client,
+            )
             if delay > 0 and i < len(findings) - 1:
                 time.sleep(delay)
 
@@ -654,11 +667,13 @@ def run_ai_analysis_for_finding(
 
     Bypasses the Redis cache by default (force_reanalyze=True) so the caller
     always gets a fresh result.  Does NOT change target.status.
+    Provider and Redis client are resolved once, not per finding.
     """
     log = structlog.get_logger().bind(
         finding_id=finding_id, task="run_ai_analysis_for_finding"
     )
-    from core.analysis.classifier import classify_finding
+    from core.analysis.classifier import _get_redis, classify_finding
+    from core.analysis.provider import get_provider
 
     with SessionLocal() as session:
         finding = session.get(Finding, finding_id)
@@ -668,7 +683,17 @@ def run_ai_analysis_for_finding(
         if target is None:
             raise ValueError(f"Target {finding.target_id} not found")
 
-        classify_finding(finding, target, session, force_reanalyze=force_reanalyze)
+        provider = get_provider(session=session)
+        redis_client = _get_redis()
+
+        classify_finding(
+            finding,
+            target,
+            session,
+            force_reanalyze=force_reanalyze,
+            provider=provider,
+            redis_client=redis_client,
+        )
         session.commit()
 
     log.info("finding_analyzed", finding_id=finding_id)

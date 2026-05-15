@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
+import os
 import re
 from typing import Any
 
 from celery import Celery
 from redis import Redis
 from redis.exceptions import RedisError
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from core.db.models import Finding, ReconResult, SystemSetting, Target
@@ -24,6 +27,32 @@ _DOMAIN_RE = re.compile(
 # ---------------------------------------------------------------------------
 
 
+def _is_local_or_private(domain: str) -> bool:
+    """Return True if *domain* looks like a local/private/loopback target.
+
+    Checks performed (in order):
+    - Exact name: localhost, localdomain
+    - TLD suffix: .local, .localhost
+    - IP address: loopback, private, link-local, reserved, multicast
+    """
+    lower = domain.lower()
+    if lower in {"localhost", "localdomain"}:
+        return True
+    if lower.endswith(".local") or lower.endswith(".localhost"):
+        return True
+    try:
+        addr = ipaddress.ip_address(lower)
+        return (
+            addr.is_loopback
+            or addr.is_private
+            or addr.is_link_local
+            or addr.is_reserved
+            or addr.is_multicast
+        )
+    except ValueError:
+        return False
+
+
 def normalize_domain(domain: str) -> str:
     cleaned = domain.strip().lower()
     if cleaned.startswith("http://"):
@@ -36,6 +65,10 @@ def normalize_domain(domain: str) -> str:
             f"Invalid domain {domain!r}: only letters, digits, hyphens and dots are allowed"
         )
     return cleaned
+
+
+def _allow_local_targets() -> bool:
+    return os.getenv("ALLOW_LOCAL_TARGETS", "false").lower() in {"true", "1", "yes"}
 
 
 def create_target(
@@ -51,6 +84,11 @@ def create_target(
     normalized = normalize_domain(domain)
     if not normalized:
         raise ValueError("Domain is required.")
+    if not _allow_local_targets() and _is_local_or_private(normalized):
+        raise ValueError(
+            f"Local/private target {normalized!r} is blocked by default. "
+            "Set ALLOW_LOCAL_TARGETS=true to allow scanning local/private targets."
+        )
 
     target = Target(
         domain=normalized,
@@ -77,6 +115,7 @@ def bulk_create_targets(
     """
     from sqlalchemy.exc import IntegrityError
 
+    allow_local = _allow_local_targets()
     created = 0
     skipped = 0
     errors: list[str] = []
@@ -88,6 +127,12 @@ def bulk_create_targets(
             continue
         if not normalized:
             errors.append(f"Empty domain (raw: {raw!r})")
+            continue
+        if not allow_local and _is_local_or_private(normalized):
+            errors.append(
+                f"Local/private target {normalized!r} blocked "
+                "(set ALLOW_LOCAL_TARGETS=true to allow)"
+            )
             continue
         try:
             session.add(Target(domain=normalized, scope_includes=[normalized]))
@@ -168,7 +213,7 @@ def finding_exists(
     return q.first() is not None
 
 
-def list_findings(
+def _findings_base_query(
     session: Session,
     severities: list[str] | None = None,
     statuses: list[str] | None = None,
@@ -177,9 +222,8 @@ def list_findings(
     vuln_types: list[str] | None = None,
     score_min: int = 0,
     score_max: int = 100,
-    limit: int | None = None,
-    offset: int = 0,
-) -> list[dict[str, object]]:
+):
+    """Return a filtered SQLAlchemy query over Finding — no limit/offset applied."""
     query = session.query(Finding).join(Target).order_by(Finding.created_at.desc())
 
     if severities:
@@ -194,23 +238,68 @@ def list_findings(
         Finding.auto_score >= score_min,
         Finding.auto_score <= score_max,
     )
-
-    cleaned_search = search.strip().lower()
-    findings = query.all()
+    cleaned_search = search.strip()
     if cleaned_search:
-        findings = [
-            f
-            for f in findings
-            if cleaned_search in f.title.lower()
-            or (f.url is not None and cleaned_search in f.url.lower())
-            or (f.template_id is not None and cleaned_search in f.template_id.lower())
-        ]
+        pattern = f"%{cleaned_search}%"
+        query = query.filter(
+            or_(
+                Finding.title.ilike(pattern),
+                Finding.url.ilike(pattern),
+                Finding.template_id.ilike(pattern),
+            )
+        )
+    return query
 
-    # Apply pagination after all filters (including in-memory text search)
+
+def count_findings(
+    session: Session,
+    severities: list[str] | None = None,
+    statuses: list[str] | None = None,
+    search: str = "",
+    target_id: int | None = None,
+    vuln_types: list[str] | None = None,
+    score_min: int = 0,
+    score_max: int = 100,
+) -> int:
+    """Return the total number of findings matching the given filters."""
+    return _findings_base_query(
+        session,
+        severities=severities,
+        statuses=statuses,
+        search=search,
+        target_id=target_id,
+        vuln_types=vuln_types,
+        score_min=score_min,
+        score_max=score_max,
+    ).count()
+
+
+def list_findings(
+    session: Session,
+    severities: list[str] | None = None,
+    statuses: list[str] | None = None,
+    search: str = "",
+    target_id: int | None = None,
+    vuln_types: list[str] | None = None,
+    score_min: int = 0,
+    score_max: int = 100,
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[dict[str, object]]:
+    query = _findings_base_query(
+        session,
+        severities=severities,
+        statuses=statuses,
+        search=search,
+        target_id=target_id,
+        vuln_types=vuln_types,
+        score_min=score_min,
+        score_max=score_max,
+    )
     if offset:
-        findings = findings[offset:]
+        query = query.offset(offset)
     if limit is not None:
-        findings = findings[:limit]
+        query = query.limit(limit)
 
     return [
         {
@@ -228,7 +317,7 @@ def list_findings(
             "exploitation_difficulty": f.exploitation_difficulty,
             "raw_evidence": f.raw_evidence,
         }
-        for f in findings
+        for f in query.all()
     ]
 
 

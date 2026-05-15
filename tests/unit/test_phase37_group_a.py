@@ -55,7 +55,7 @@ def _add_findings(sf: sessionmaker[Session], target_id: int, count: int) -> None
         session.commit()
 
 
-def _noop_classify(finding, target, session, force_reanalyze: bool = False) -> None:
+def _noop_classify(finding, target, session, force_reanalyze: bool = False, **kwargs) -> None:
     finding.classifier_used = "heuristic"
     finding.auto_score = finding.auto_score or 30
     finding.confidence = "possible"
@@ -228,7 +228,7 @@ class TestAnalysisRunningStatus:
 
         status_during_classify: list[str] = []
 
-        def track_status(finding, target, session, force_reanalyze: bool = False) -> None:
+        def track_status(finding, target, session, force_reanalyze: bool = False, **kwargs) -> None:
             # target is expired after the first session.commit(); accessing .status
             # triggers a lazy-load which returns the committed "analysis_running" value.
             status_during_classify.append(target.status)
@@ -285,7 +285,7 @@ class TestAnalysisRunningStatus:
         first_call_status: list[str] = []
 
         def check_via_new_session(
-            finding, target, session, force_reanalyze: bool = False
+            finding, target, session, force_reanalyze: bool = False, **kwargs
         ) -> None:
             if not first_call_status:
                 with sf() as check_session:

@@ -422,22 +422,23 @@ Esses itens ficam para Fase 4, Fase 4.5 ou pós-Fase 5.
   gau, gowitness) em valores verificados. Rastrear em https://github.com/sensepost/gowitness/releases
   e equivalentes. Bloqueante apenas se ferramenta quebrar por mudança de CLI upstream.
 
-### Grupo C — Performance e consistência
+### Grupo C — Performance e consistência ✅
 
-- [ ] Refatorar `list_findings()` para paginação real no banco:
-  - `limit`;
-  - `offset`;
-  - query de count separada.
-- [ ] Atualizar dashboard para usar paginação de banco, não slice em memória.
-- [ ] Refatorar `classify_finding()` para receber `provider` e `redis_client` opcionais.
-- [ ] Refatorar `run_ai_analysis()` para resolver provider/cache uma vez por execução.
-- [ ] Refatorar `render_settings_page()` para não manter sessão aberta durante toda a página.
-- [ ] Implementar `ALLOW_LOCAL_TARGETS=false`:
-  - bloquear localhost;
-  - bloquear loopback;
-  - bloquear IPs privados;
-  - bloquear link-local;
-  - permitir apenas se env var for true.
+- [x] Refatorar `list_findings()` para paginação real no banco:
+  - `limit` e `offset` aplicados via SQL (`.offset()` / `.limit()`);
+  - text search movido para SQL com `ilike` via `or_()`;
+  - removido slice em memória.
+- [x] Criar `count_findings()` com os mesmos filtros de `list_findings`.
+- [x] Atualizar dashboard Findings para usar `count_findings` + `list_findings(limit, offset)`.
+- [x] Refatorar `classify_finding()` para receber `provider` e `redis_client` opcionais (sentinel `_UNSET`).
+- [x] Refatorar `run_ai_analysis()` para resolver provider/cache uma vez por execução.
+- [x] Refatorar `run_ai_analysis_for_finding()` para resolver provider/cache uma vez.
+- [x] Refatorar `render_settings_page()` com `_read_settings()` e `_write_settings()` — sessões curtas por operação.
+- [x] Implementar `ALLOW_LOCAL_TARGETS=false`:
+  - bloquear localhost, localdomain, `.local`, `.localhost`;
+  - bloquear loopback, IPs privados, link-local, reservados, multicast via `ipaddress`;
+  - aplicado em `create_target` e `bulk_create_targets`;
+  - permitir apenas se `ALLOW_LOCAL_TARGETS=true`.
 
 ### Grupo D — Estados de falha e resiliência
 
@@ -751,3 +752,4 @@ Ao final:
 | 2026-05-15 | 3.7 ✅ | Revisão final: todos os 17 critérios de saída confirmados no código. Fase 3.7 encerrada. Próxima: Fase 4 — Monitoramento de Plataformas. | — |
 | 2026-05-15 | Auditoria pós-3.7 | 3.7 validada em grande parte; encontrados problemas remanescentes em SPEC.md, CLAUDE.md, compose exposto, paginação em memória, provider por finding, settings session longa e ALLOW_LOCAL_TARGETS não implementado. Criada Fase 3.8 antes da Fase 4. | Fase 3.8 |
 | 2026-05-15 | 3.8 Grupo B | Compose seguro: removidas portas de db/redis/flower, dashboard em 127.0.0.1. Criado docker-compose.local.yml. Makefile: up-local. README: local vs VPS, SSH tunnel, Tailscale, Caddy. Dockerfile.worker: comentário sobre pinagem de versões Go. | Grupos C/D/E da 3.8 |
+| 2026-05-15 | 3.8 Grupo C | Paginação real: list_findings/count_findings com SQL limit/offset e ilike search. Dashboard findings: count+page query. classify_finding: provider/redis_client opcionais (sentinel). run_ai_analysis: provider+redis resolvidos uma vez. Settings page: _read_settings/_write_settings com sessões curtas. ALLOW_LOCAL_TARGETS: bloqueia localhost/private/link-local por padrão. 342 testes passando. | Grupos D/E da 3.8 |

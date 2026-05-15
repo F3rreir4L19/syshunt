@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
@@ -23,6 +23,8 @@ _CACHE_KEY_PREFIX = "syshunt:analysis:"
 
 _log = structlog.get_logger()
 
+_UNSET: Any = object()  # sentinel for "caller did not supply this argument"
+
 
 def _analysis_hash(finding: "Finding") -> str:
     raw = (finding.type or "") + (finding.url or "") + str(finding.raw_evidence)[:500]
@@ -37,7 +39,6 @@ def _get_redis():
     """Return a Redis client or None if unavailable."""
     try:
         from redis import Redis
-        from redis.exceptions import RedisError
 
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
         client = Redis.from_url(redis_url, socket_connect_timeout=0.5)
@@ -80,6 +81,8 @@ def classify_finding(
     target: "Target",
     session: "Session",
     force_reanalyze: bool = False,
+    provider: Any = _UNSET,
+    redis_client: Any = _UNSET,
 ) -> None:
     """Classify *finding* in-place: applies score fields and persists via *session*.
 
@@ -88,11 +91,18 @@ def classify_finding(
 
     When *force_reanalyze* is True, Redis cache lookup is skipped so the AI
     provider is always called fresh.
+
+    *provider* and *redis_client* are optional. When not supplied (sentinel),
+    they are resolved here — one call per finding. Callers that process many
+    findings should resolve both once and pass them in to avoid per-finding
+    overhead.
     """
     log = _log.bind(finding_id=finding.id, target_id=finding.target_id)
     h = _analysis_hash(finding)
     cache_key = _cache_key(h)
-    redis = _get_redis()
+
+    # Resolve redis once if not provided by the caller
+    redis = _get_redis() if redis_client is _UNSET else redis_client
 
     score: FindingScore | None = None
 
@@ -113,10 +123,12 @@ def classify_finding(
             log.info("classifier_cache_hit", classifier_used=score.classifier_used)
 
     if score is None:
-        provider = get_provider(session=session)
-        if provider is not None:
+        # Resolve provider once if not provided by the caller
+        resolved_provider = get_provider(session=session) if provider is _UNSET else provider
+
+        if resolved_provider is not None:
             try:
-                score = AIClassifier(provider).classify(finding, target)
+                score = AIClassifier(resolved_provider).classify(finding, target)
             except Exception as exc:
                 log.warning("ai_classifier_exception", error=str(exc))
                 score = None
