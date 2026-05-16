@@ -504,10 +504,13 @@ Esses itens ficam para Fase 4, Fase 4.5 ou pós-Fase 5.
 - [x] `tests/fixtures/intigriti/` — 4 fixtures JSON (token, programs, domains)
 - [x] `tests/unit/test_monitor_intigriti.py` — 55 testes: token fetch, cache/expiry/invalidation, 401 retry, normalize, extract scopes, fetch programs, scheduler, credential safety (secret + bearer token nunca logados), sync E2E (token buscado uma vez para múltiplos programas)
 
-### Scheduler Avançado
-- [ ] Intervalo configurável por plataforma
-- [ ] Task: `poll_all_platforms()` — roda a cada 30 min via Celery Beat
-- [ ] Task: `trigger_recon_for_new_program(program_id)`
+### Scheduler Avançado ✅
+- [x] Intervalo configurável por plataforma (`HACKERONE_POLL_INTERVAL_SECONDS`, `BUGCROWD_POLL_INTERVAL_SECONDS`, `INTIGRITI_POLL_INTERVAL_SECONDS`, `PLATFORM_POLL_INTERVAL_SECONDS`, default 1800)
+- [x] Task: `poll_all_platforms()` — agrega resultados dos três monitores em sequência; retorna `{platforms, total_new, total_scope_changed, total_errors}`
+- [x] Task: `trigger_recon_for_new_program(program_id)` — extrai domínios do scope, cria/reusa Targets, respeita `auto_recon_enabled`, `MAX_RECON_TARGETS_PER_PROGRAM`, `ALLOW_LOCAL_TARGETS`; deduplicação por domínio; filtra asset types não-web (android, ios, cidr, etc.)
+- [x] Celery Beat schedule configurado no módulo `scheduler.py` com intervalos por plataforma
+- [x] `_domain_from_scope_identifier()` — helper que extrai hostname de URLs, bare domains, wildcards; rejeita IPs e CIDRs
+- [x] `tests/unit/test_monitor_scheduler.py` — 33 testes: `_domain_from_scope_identifier` (14), `poll_all_platforms` (5), `trigger_recon_for_new_program` (9), Beat schedule (5)
 
 ### Notificações Discord
 - [x] `core/notifications.py` — webhook Discord (criado na Fase 3.7)
