@@ -1,0 +1,41 @@
+[
+  {
+    "id": "domain-1",
+    "endpoint": "https://www.acme.com",
+    "type": {
+      "id": 1,
+      "value": "url"
+    },
+    "bounty": true,
+    "inScope": true,
+    "maxBounty": {
+      "id": 4,
+      "value": "Critical"
+    }
+  },
+  {
+    "id": "domain-2",
+    "endpoint": "https://api.acme.com",
+    "type": {
+      "id": 1,
+      "value": "url"
+    },
+    "bounty": true,
+    "inScope": true,
+    "maxBounty": {
+      "id": 3,
+      "value": "High"
+    }
+  },
+  {
+    "id": "domain-3",
+    "endpoint": "https://internal.acme.com",
+    "type": {
+      "id": 1,
+      "value": "url"
+    },
+    "bounty": false,
+    "inScope": false,
+    "maxBounty": null
+  }
+]

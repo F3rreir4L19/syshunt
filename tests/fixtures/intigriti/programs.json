@@ -1,0 +1,36 @@
+[
+  {
+    "id": "prog-intigriti-1",
+    "name": "Acme Security Program",
+    "handle": "acme",
+    "status": {
+      "id": 2,
+      "value": "Open"
+    },
+    "confidentialityLevel": {
+      "id": 4,
+      "value": "Public"
+    },
+    "minBounty": 100,
+    "maxBounty": 5000,
+    "averageBounty": 750,
+    "lastUpdateAt": "2021-06-01T00:00:00Z"
+  },
+  {
+    "id": "prog-intigriti-2",
+    "name": "Delta Security",
+    "handle": "delta-corp",
+    "status": {
+      "id": 2,
+      "value": "Open"
+    },
+    "confidentialityLevel": {
+      "id": 3,
+      "value": "Invite only"
+    },
+    "minBounty": 50,
+    "maxBounty": 2000,
+    "averageBounty": 300,
+    "lastUpdateAt": "2022-09-15T00:00:00Z"
+  }
+]

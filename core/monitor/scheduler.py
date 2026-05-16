@@ -65,3 +65,30 @@ def poll_bugcrowd() -> dict:
     except Exception as exc:
         _log.warning("bugcrowd_poll_error", error=str(exc))
         return {"skipped": True, "error": str(exc)}
+
+
+@celery_app.task(name="core.monitor.poll_intigriti")
+def poll_intigriti() -> dict:
+    """Fetch Intigriti programs and sync to DB.
+
+    Reads INTIGRITI_CLIENT_ID and INTIGRITI_CLIENT_SECRET from environment.
+    Returns stats dict: {fetched, new, scope_changed, errors}.
+    Skips silently if credentials are not configured.
+    """
+    client_id = os.getenv("INTIGRITI_CLIENT_ID", "")
+    client_secret = os.getenv("INTIGRITI_CLIENT_SECRET", "")
+
+    if not client_id or not client_secret:
+        _log.info("intigriti_poll_skipped", reason="credentials_not_configured")
+        return {"skipped": True, "reason": "credentials_not_configured"}
+
+    from core.db.session import SessionLocal
+    from core.monitor.intigriti import IntigritiMonitor
+
+    monitor = IntigritiMonitor(client_id=client_id, client_secret=client_secret)
+    try:
+        with SessionLocal() as session:
+            return monitor.sync_programs(session)
+    except Exception as exc:
+        _log.warning("intigriti_poll_error", error=str(exc))
+        return {"skipped": True, "error": str(exc)}
