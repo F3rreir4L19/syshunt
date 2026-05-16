@@ -18,6 +18,7 @@ from core.db.queries import (
     get_pipeline_status,
     get_setting,
     get_target_screenshot_paths,
+    list_bounty_programs,
     list_findings,
     list_targets,
     normalize_domain,
@@ -644,6 +645,54 @@ def render_placeholder_page(title: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Programs page
+# ---------------------------------------------------------------------------
+
+
+def render_programs_page() -> None:
+    st.header("Programs")
+
+    with SessionLocal() as session:
+        programs = list_bounty_programs(session)
+
+    if not programs:
+        st.info(
+            "No programs tracked yet. Configure HackerOne credentials in Settings "
+            "and trigger a sync via the scheduler."
+        )
+        return
+
+    _BADGE_NEW = "🆕 NEW"
+    _BADGE_SCOPE = "🔄 SCOPE CHANGED"
+
+    rows = []
+    for p in programs:
+        badge = ""
+        if st.session_state.get(f"prog_new_{p['id']}"):
+            badge = _BADGE_NEW
+        elif st.session_state.get(f"prog_scope_{p['id']}"):
+            badge = _BADGE_SCOPE
+
+        rows.append(
+            {
+                "Platform": p["platform"],
+                "Handle": p["program_handle"],
+                "Name": p["name"],
+                "Auto-recon": "✓" if p["auto_recon_enabled"] else "",
+                "Last checked": (
+                    p["last_checked_at"].strftime("%Y-%m-%d %H:%M")
+                    if p["last_checked_at"]
+                    else "—"
+                ),
+                "Scope entries": p["scope_count"],
+                "Badge": badge,
+            }
+        )
+
+    st.dataframe(rows, use_container_width=True)
+
+
+# ---------------------------------------------------------------------------
 # Settings page
 # ---------------------------------------------------------------------------
 
@@ -904,7 +953,7 @@ def render_page(page: str) -> None:
     elif page == PAGE_FINDINGS:
         render_findings_page()
     elif page == PAGE_PROGRAMS:
-        render_placeholder_page(PAGE_PROGRAMS)
+        render_programs_page()
     elif page == PAGE_SETTINGS:
         render_settings_page()
     else:

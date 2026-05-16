@@ -130,16 +130,67 @@ def notify_high_score_finding(
         _log.warning("notify_high_score_finding_failed", error=str(exc))
 
 
-def notify_new_program(program: "BountyProgram") -> None:
-    """Stub — Phase 4 will implement platform-monitoring notifications."""
+def notify_new_program(
+    program: "BountyProgram",
+    session: object = None,
+) -> None:
+    """Send a new-program notification to Discord.
+
+    Respects the ``notify_new_program`` system setting flag.
+    Never raises; logs warning on any failure.
+    """
+    try:
+        if not _get_flag(session, "notify_new_program"):
+            return
+        webhook_url = _get_webhook_url(session)
+        if not webhook_url:
+            return
+        handle = getattr(program, "program_handle", str(program))
+        name = getattr(program, "name", handle)
+        platform = getattr(program, "platform", "unknown")
+        content = (
+            "🆕 [NEW PROGRAM]\n"
+            f"Platform: {platform}\n"
+            f"Handle: {handle}\n"
+            f"Name: {name}\n"
+            "Dashboard: http://localhost:8501"
+        )
+        _post_discord(webhook_url, content)
+    except Exception as exc:
+        _log.warning("notify_new_program_failed", error=str(exc))
 
 
 def notify_scope_changed(
     program: "BountyProgram",
     added: list[str],
     removed: list[str],
+    session: object = None,
 ) -> None:
-    """Stub — Phase 4 will implement scope-change notifications."""
+    """Send a scope-change notification to Discord.
+
+    Respects the ``notify_scope_changed`` system setting flag.
+    Never raises; logs warning on any failure.
+    """
+    try:
+        if not _get_flag(session, "notify_scope_changed"):
+            return
+        webhook_url = _get_webhook_url(session)
+        if not webhook_url:
+            return
+        handle = getattr(program, "program_handle", str(program))
+        platform = getattr(program, "platform", "unknown")
+        added_str = "\n  + ".join(added) if added else "(none)"
+        removed_str = "\n  - ".join(removed) if removed else "(none)"
+        content = (
+            "🔄 [SCOPE CHANGED]\n"
+            f"Platform: {platform}\n"
+            f"Handle: {handle}\n"
+            f"Added:\n  + {added_str}\n"
+            f"Removed:\n  - {removed_str}"
+        )
+        _post_discord(webhook_url, content)
+    except Exception as exc:
+        _log.warning("notify_scope_changed_failed", error=str(exc))
 
 
 def notify_pipeline_error(

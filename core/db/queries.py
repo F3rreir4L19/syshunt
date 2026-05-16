@@ -13,7 +13,7 @@ from redis.exceptions import RedisError
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from core.db.models import Finding, ReconResult, SystemSetting, Target
+from core.db.models import BountyProgram, Finding, ReconResult, SystemSetting, Target
 
 # Valid domain: labels of letters/digits/hyphens separated by dots, no leading/trailing
 # hyphens per label.  Also accepts plain hostnames without a dot (e.g. "localhost").
@@ -579,3 +579,92 @@ def export_findings_markdown(
         lines.append("")
 
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# BountyProgram helpers
+# ---------------------------------------------------------------------------
+
+
+def get_bounty_program_by_handle(
+    session: Session, platform: str, program_handle: str
+) -> BountyProgram | None:
+    """Return the BountyProgram for the given platform + handle, or None."""
+    return (
+        session.query(BountyProgram)
+        .filter(
+            BountyProgram.platform == platform,
+            BountyProgram.program_handle == program_handle,
+        )
+        .first()
+    )
+
+
+def upsert_bounty_program(
+    session: Session,
+    platform: str,
+    program_handle: str,
+    name: str,
+    scope: list[dict[str, Any]],
+    bounty_table: dict[str, Any],
+    auto_recon_enabled: bool = False,
+) -> tuple["BountyProgram", bool, list[str], list[str]]:
+    """Insert or update a BountyProgram.
+
+    Returns ``(program, is_new, added_scope_ids, removed_scope_ids)``.
+    ``is_new`` is True only on first insert.  ``first_seen_at`` is never
+    overwritten for existing programs.  ``last_checked_at`` is always updated.
+    """
+    from datetime import UTC, datetime
+
+    now = datetime.now(UTC)
+    existing = get_bounty_program_by_handle(session, platform, program_handle)
+
+    if existing is None:
+        program = BountyProgram(
+            platform=platform,
+            program_handle=program_handle,
+            name=name,
+            scope=scope,
+            bounty_table=bounty_table,
+            auto_recon_enabled=auto_recon_enabled,
+            last_checked_at=now,
+            first_seen_at=now,
+        )
+        session.add(program)
+        session.flush()
+        return program, True, [], []
+
+    # Compute scope diff before updating
+    key = "asset_identifier"
+    old_ids = {item.get(key, "") for item in (existing.scope or []) if item.get(key)}
+    new_ids = {item.get(key, "") for item in scope if item.get(key)}
+    added = sorted(new_ids - old_ids)
+    removed = sorted(old_ids - new_ids)
+
+    existing.name = name
+    existing.scope = scope
+    existing.bounty_table = bounty_table
+    existing.last_checked_at = now
+    session.flush()
+    return existing, False, added, removed
+
+
+def list_bounty_programs(session: Session) -> list[dict[str, Any]]:
+    """Return all BountyPrograms ordered by first_seen_at desc."""
+    programs = (
+        session.query(BountyProgram).order_by(BountyProgram.first_seen_at.desc()).all()
+    )
+    return [
+        {
+            "id": p.id,
+            "platform": p.platform,
+            "program_handle": p.program_handle,
+            "name": p.name,
+            "auto_recon_enabled": p.auto_recon_enabled,
+            "last_checked_at": p.last_checked_at,
+            "first_seen_at": p.first_seen_at,
+            "scope_count": len(p.scope or []),
+        }
+        for p in programs
+    ]

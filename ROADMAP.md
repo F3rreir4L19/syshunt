@@ -478,12 +478,17 @@ Esses itens ficam para Fase 4, Fase 4.5 ou pós-Fase 5.
 > Pré-requisito obrigatório: Fase 3.8 concluída.
 > A Fase 4 só deve começar quando o sistema já puder rodar recon manual pela UI, proteger dashboard via senha, notificar conclusão, evitar duplicação básica de findings, usar compose seguro para VPS, paginar findings no banco e bloquear targets locais/privados por padrão.
 
-### Integração HackerOne
-- [ ] `core/monitor/hackerone.py` — cliente da API
-- [ ] Parsing de programas e escopos
-- [ ] Detecção de novos programas (por `launched_at`)
-- [ ] Detecção de mudanças de escopo
-- [ ] Testes com fixtures JSON da API
+### Grupo 1 — HackerOne MVP ✅
+
+- [x] `core/monitor/base.py` — ABC `PlatformMonitor`, `ProgramInfo`, `PlatformAPIError`, `RateLimitError`
+- [x] `core/monitor/hackerone.py` — cliente HTTP com auth Basic, paginação, rate limit, parse de programas e escopos
+- [x] `core/monitor/scheduler.py` — task Celery `poll_hackerone` (não auto-agendada ainda)
+- [x] `core/db/queries.py` — `upsert_bounty_program`, `list_bounty_programs`, `get_bounty_program_by_handle`
+- [x] `core/db/migrations/versions/20260515_0006` — unique index em `bounty_programs(platform, program_handle)`
+- [x] `core/notifications.py` — `notify_new_program` e `notify_scope_changed` implementados (flags: `notify_new_program`, `notify_scope_changed`)
+- [x] `dashboard/app.py` — `render_programs_page()`: lista básica com platform/handle/name/auto-recon/last_checked/scope count
+- [x] `tests/fixtures/hackerone/` — fixtures JSON para programas e escopos
+- [x] `tests/unit/test_monitor_hackerone.py` — 43 testes: cliente, normalize, scopes, upsert, detect, notificações, token safety, scheduler
 
 ### Integração Bugcrowd
 - [ ] `core/monitor/bugcrowd.py` — cliente da API
@@ -492,21 +497,20 @@ Esses itens ficam para Fase 4, Fase 4.5 ou pós-Fase 5.
 ### Integração Intigriti
 - [ ] `core/monitor/intigriti.py` — OAuth2 + API REST
 
-### Scheduler
-- [ ] `core/monitor/scheduler.py` — Celery Beat task de polling
+### Scheduler Avançado
 - [ ] Intervalo configurável por plataforma
-- [ ] Task: `poll_all_platforms()` — roda a cada 30 min
+- [ ] Task: `poll_all_platforms()` — roda a cada 30 min via Celery Beat
 - [ ] Task: `trigger_recon_for_new_program(program_id)`
 
 ### Notificações Discord
 - [x] `core/notifications.py` — webhook Discord (criado na Fase 3.7)
 - [x] Formatos de mensagem para `recon_completed` e `high_score_finding` (Fase 3.7)
 - [x] Configuração no dashboard — seção Notifications na página Settings (Fase 3.7)
-- [ ] Formatos de mensagem para `new_program` e `scope_changed` (Fase 4 — stubs existem)
+- [x] Formatos de mensagem para `new_program` e `scope_changed` (Fase 4 Grupo 1)
 
 ### Dashboard — Fase 4
-- [ ] Página Programs completa
-- [ ] Badge NEW / SCOPE CHANGED
+- [x] Página Programs básica: platform, handle, name, auto-recon, last_checked, scope entries (Grupo 1)
+- [ ] Badge NEW / SCOPE CHANGED persistido no DB
 - [ ] Botão de approve para disparar deep scan
 - [ ] Histórico de mudanças de escopo por programa
 
@@ -754,3 +758,4 @@ Ao final:
 | 2026-05-15 | 3.8 Grupo B | Compose seguro: removidas portas de db/redis/flower, dashboard em 127.0.0.1. Criado docker-compose.local.yml. Makefile: up-local. README: local vs VPS, SSH tunnel, Tailscale, Caddy. Dockerfile.worker: comentário sobre pinagem de versões Go. | Grupos C/D/E da 3.8 |
 | 2026-05-15 | 3.8 Grupo C | Paginação real: list_findings/count_findings com SQL limit/offset e ilike search. Dashboard findings: count+page query. classify_finding: provider/redis_client opcionais (sentinel). run_ai_analysis: provider+redis resolvidos uma vez. Settings page: _read_settings/_write_settings com sessões curtas. ALLOW_LOCAL_TARGETS: bloqueia localhost/private/link-local por padrão. 342 testes passando. | Grupos D/E da 3.8 |
 | 2026-05-15 | 3.8 Grupos D/E ✅ | run_ai_analysis: try/except → analysis_failed + notify_pipeline_error. run_full_pipeline: try/except → recon_failed + notify_pipeline_error. Dashboard: recon_failed/analysis_failed nos filtros de status. docs/current_pipeline.md: pipeline real documentado. Amass não integrado (só subfinder). ffuf wrapper existe mas sem task Celery (backlog). Recon recursivo existe mas não auto-triggerado. ROADMAP.md: Fase 3.8 encerrada. | Fase 4 — Monitoramento de Plataformas |
+| 2026-05-15 | 4 Grupo 1 ✅ | HackerOne MVP: base.py (ABC), hackerone.py (cliente HTTP, paginação, parse, rate limit), scheduler.py (poll_hackerone task), upsert_bounty_program + list/get queries, migration 0006 (unique index platform+handle), notify_new_program + notify_scope_changed implementadas, render_programs_page no dashboard, fixtures JSON, 43 testes. 399 passando. | Bugcrowd, Intigriti, auto-recon, scheduler automático |

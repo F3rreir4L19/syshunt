@@ -1,0 +1,6 @@
+{
+  "data": [],
+  "links": {
+    "self": "https://api.hackerone.com/v1/hackers/programs?page[number]=2&page[size]=25"
+  }
+}

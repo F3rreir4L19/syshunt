@@ -390,8 +390,8 @@ Quando o Codex/Claude Code trabalhar neste projeto:
 ### Fase 3.5 ✅ — Hardening IA/providers/settings
 ### Fase 3.6 ✅ — Sincronização de docs e contratos
 ### Fase 3.7 ✅ — Operabilidade real + hardening mínimo
-### Fase 3.8 🔧 — Auditoria pós-3.7 e preparação para Fase 4
-### Fase 4 ⏳ — Monitoramento de Plataformas
+### Fase 3.8 ✅ — Auditoria pós-3.7 e preparação para Fase 4
+### Fase 4 🔧 — Monitoramento de Plataformas (Grupo 1 HackerOne MVP concluído)
 ### Fase 5 ⏳ — Dashboard Completo e Polish
 
 ---
@@ -511,3 +511,8 @@ ALLOW_LOCAL_TARGETS=false
 | 2026-05-15 | `core/notifications.py` com `notify_recon_completed` e `notify_high_score_finding` integradas em `run_ai_analysis`; stubs para `notify_new_program`, `notify_scope_changed`, `notify_pipeline_error` | Stubs preparam a interface para Fase 4 sem bloquear operação atual |
 | 2026-05-15 | `export_findings_csv` e `export_findings_markdown` em `core/db/queries.py`; dashboard usa `st.download_button` | Export de findings é requisito de operabilidade antes de monitoramento contínuo |
 | 2026-05-15 | Fase 3.8 criada antes da Fase 4 | Corrigir docs quebradas, compose exposto, paginação em memória, provider por finding, Settings Page com sessão longa e ALLOW_LOCAL_TARGETS documentado mas não implementado |
+| 2026-05-15 | `PlatformMonitor` ABC em `core/monitor/base.py`; `HackerOneMonitor` implementa via urllib.request (stdlib, sem nova dep) com Basic Auth; token nunca logado | Manter dependências mínimas; stdlib suficiente para chamadas REST simples |
+| 2026-05-15 | `upsert_bounty_program` retorna `(program, is_new, added, removed)` — diff de `asset_identifier` entre scope antigo e novo; `first_seen_at` nunca sobrescrito | Permite detectar novo programa vs mudança de escopo num único passo |
+| 2026-05-15 | Migration 0006 usa `create_index(..., unique=True)` em vez de `create_unique_constraint` | `create_unique_constraint` não é suportado em SQLite sem batch mode; unique index é equivalente em PostgreSQL |
+| 2026-05-15 | `poll_hackerone` Celery task criada mas **não auto-agendada** via Beat; credenciais lidas de env; skip silencioso se ausentes | Auto-recon agressivo fica para fase posterior; task pode ser chamada manualmente ou agendada via Beat externamente |
+| 2026-05-15 | `notify_new_program(program, session=None)` e `notify_scope_changed(program, added, removed, session=None)` — adicionado `session` opcional para consistência com outras notificações; flags `notify_new_program` e `notify_scope_changed` em system_settings | Consistência com o padrão fire-and-forget já estabelecido; flags permitem silenciar sem desabilitar webhook |
