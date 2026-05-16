@@ -490,9 +490,12 @@ Esses itens ficam para Fase 4, Fase 4.5 ou pós-Fase 5.
 - [x] `tests/fixtures/hackerone/` — fixtures JSON para programas e escopos
 - [x] `tests/unit/test_monitor_hackerone.py` — 43 testes: cliente, normalize, scopes, upsert, detect, notificações, token safety, scheduler
 
-### Integração Bugcrowd
-- [ ] `core/monitor/bugcrowd.py` — cliente da API
-- [ ] Mesma lógica de detecção
+### Grupo 2 — Bugcrowd ✅
+
+- [x] `core/monitor/bugcrowd.py` — cliente HTTP (Token auth), paginação, rate limit, parse de programas e scope de targets
+- [x] `core/monitor/scheduler.py` — task Celery `poll_bugcrowd` adicionada
+- [x] `tests/fixtures/bugcrowd/` — 5 fixtures JSON (programs, targets, paginação)
+- [x] `tests/unit/test_monitor_bugcrowd.py` — 43 testes: normalize, extract scopes (in_scope filter), auth header, HTTP errors, pagination, upsert, platform isolation, notifications, token safety, scheduler, sync E2E
 
 ### Integração Intigriti
 - [ ] `core/monitor/intigriti.py` — OAuth2 + API REST
@@ -759,3 +762,4 @@ Ao final:
 | 2026-05-15 | 3.8 Grupo C | Paginação real: list_findings/count_findings com SQL limit/offset e ilike search. Dashboard findings: count+page query. classify_finding: provider/redis_client opcionais (sentinel). run_ai_analysis: provider+redis resolvidos uma vez. Settings page: _read_settings/_write_settings com sessões curtas. ALLOW_LOCAL_TARGETS: bloqueia localhost/private/link-local por padrão. 342 testes passando. | Grupos D/E da 3.8 |
 | 2026-05-15 | 3.8 Grupos D/E ✅ | run_ai_analysis: try/except → analysis_failed + notify_pipeline_error. run_full_pipeline: try/except → recon_failed + notify_pipeline_error. Dashboard: recon_failed/analysis_failed nos filtros de status. docs/current_pipeline.md: pipeline real documentado. Amass não integrado (só subfinder). ffuf wrapper existe mas sem task Celery (backlog). Recon recursivo existe mas não auto-triggerado. ROADMAP.md: Fase 3.8 encerrada. | Fase 4 — Monitoramento de Plataformas |
 | 2026-05-15 | 4 Grupo 1 ✅ | HackerOne MVP: base.py (ABC), hackerone.py (cliente HTTP, paginação, parse, rate limit), scheduler.py (poll_hackerone task), upsert_bounty_program + list/get queries, migration 0006 (unique index platform+handle), notify_new_program + notify_scope_changed implementadas, render_programs_page no dashboard, fixtures JSON, 43 testes. 399 passando. | Bugcrowd, Intigriti, auto-recon, scheduler automático |
+| 2026-05-15 | 4 Grupo 2 ✅ | Bugcrowd: bugcrowd.py (Token auth, paginação, in_scope filter), poll_bugcrowd task, 5 fixtures JSON, 43 testes. Isolamento de plataforma validado (bugcrowd:acme ≠ hackerone:acme). 442 passando. | Intigriti, auto-recon, scheduler automático |

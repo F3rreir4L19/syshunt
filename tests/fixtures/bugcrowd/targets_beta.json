@@ -1,0 +1,15 @@
+{
+  "data": [
+    {
+      "id": "tgt-b1",
+      "type": "target",
+      "attributes": {
+        "name": "Beta Main App",
+        "uri": "https://app.betasecurity.io",
+        "category": "website",
+        "in_scope": true,
+        "eligible_for_bounty": true
+      }
+    }
+  ]
+}

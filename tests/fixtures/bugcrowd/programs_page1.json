@@ -1,0 +1,43 @@
+{
+  "data": [
+    {
+      "id": "prog-acme",
+      "type": "program",
+      "attributes": {
+        "code": "acme-corp",
+        "name": "Acme Corporation",
+        "tagline": "Help us secure our products.",
+        "status": "open",
+        "starts_at": "2019-06-01T00:00:00.000Z",
+        "ends_at": null,
+        "program_type": "bug_bounty",
+        "min_points": 150,
+        "max_points": 10000
+      }
+    },
+    {
+      "id": "prog-beta",
+      "type": "program",
+      "attributes": {
+        "code": "beta-security",
+        "name": "Beta Security Program",
+        "tagline": "Responsive and fair.",
+        "status": "open",
+        "starts_at": "2021-03-10T00:00:00.000Z",
+        "ends_at": null,
+        "program_type": "bug_bounty",
+        "min_points": 50,
+        "max_points": 5000
+      }
+    }
+  ],
+  "meta": {
+    "total_count": 2,
+    "page_size": 25,
+    "page_count": 1,
+    "page_number": 1
+  },
+  "links": {
+    "self": "/programs?page[number]=1&page[size]=25"
+  }
+}

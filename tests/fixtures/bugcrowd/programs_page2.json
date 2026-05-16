@@ -1,0 +1,27 @@
+{
+  "data": [
+    {
+      "id": "prog-gamma",
+      "type": "program",
+      "attributes": {
+        "code": "gamma-program",
+        "name": "Gamma Program",
+        "status": "open",
+        "starts_at": "2022-05-20T00:00:00.000Z",
+        "ends_at": null,
+        "program_type": "bug_bounty",
+        "min_points": 200,
+        "max_points": 15000
+      }
+    }
+  ],
+  "meta": {
+    "total_count": 2,
+    "page_size": 1,
+    "page_count": 2,
+    "page_number": 2
+  },
+  "links": {
+    "self": "/programs?page[number]=2&page[size]=1"
+  }
+}

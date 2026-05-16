@@ -1,0 +1,37 @@
+{
+  "data": [
+    {
+      "id": "tgt-1",
+      "type": "target",
+      "attributes": {
+        "name": "Acme Main Website",
+        "uri": "https://www.acme.com",
+        "category": "website",
+        "in_scope": true,
+        "eligible_for_bounty": true
+      }
+    },
+    {
+      "id": "tgt-2",
+      "type": "target",
+      "attributes": {
+        "name": "Acme API",
+        "uri": "https://api.acme.com",
+        "category": "api",
+        "in_scope": true,
+        "eligible_for_bounty": true
+      }
+    },
+    {
+      "id": "tgt-3",
+      "type": "target",
+      "attributes": {
+        "name": "Acme Legacy (out of scope)",
+        "uri": "https://legacy.acme.com",
+        "category": "website",
+        "in_scope": false,
+        "eligible_for_bounty": false
+      }
+    }
+  ]
+}

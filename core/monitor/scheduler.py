@@ -39,3 +39,29 @@ def poll_hackerone() -> dict:
     except Exception as exc:
         _log.warning("hackerone_poll_error", error=str(exc))
         return {"skipped": True, "error": str(exc)}
+
+
+@celery_app.task(name="core.monitor.poll_bugcrowd")
+def poll_bugcrowd() -> dict:
+    """Fetch Bugcrowd programs and sync to DB.
+
+    Reads BUGCROWD_API_TOKEN from environment.
+    Returns stats dict: {fetched, new, scope_changed, errors}.
+    Skips silently if credentials are not configured.
+    """
+    api_token = os.getenv("BUGCROWD_API_TOKEN", "")
+
+    if not api_token:
+        _log.info("bugcrowd_poll_skipped", reason="credentials_not_configured")
+        return {"skipped": True, "reason": "credentials_not_configured"}
+
+    from core.db.session import SessionLocal
+    from core.monitor.bugcrowd import BugcrowdMonitor
+
+    monitor = BugcrowdMonitor(api_token=api_token)
+    try:
+        with SessionLocal() as session:
+            return monitor.sync_programs(session)
+    except Exception as exc:
+        _log.warning("bugcrowd_poll_error", error=str(exc))
+        return {"skipped": True, "error": str(exc)}
