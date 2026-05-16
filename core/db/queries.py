@@ -614,6 +614,9 @@ def upsert_bounty_program(
     Returns ``(program, is_new, added_scope_ids, removed_scope_ids)``.
     ``is_new`` is True only on first insert.  ``first_seen_at`` is never
     overwritten for existing programs.  ``last_checked_at`` is always updated.
+    Sets ``badge = "new"`` on first insert; ``badge = "scope_changed"`` when
+    scope items change (without downgrading an existing ``"new"`` badge).
+    Appends an entry to ``scope_history`` for each scope change.
     """
     from datetime import UTC, datetime
 
@@ -630,6 +633,8 @@ def upsert_bounty_program(
             auto_recon_enabled=auto_recon_enabled,
             last_checked_at=now,
             first_seen_at=now,
+            badge="new",
+            scope_history=[],
         )
         session.add(program)
         session.flush()
@@ -646,8 +651,43 @@ def upsert_bounty_program(
     existing.scope = scope
     existing.bounty_table = bounty_table
     existing.last_checked_at = now
+
+    if added or removed:
+        # Don't downgrade from "new" to "scope_changed"
+        if existing.badge != "new":
+            existing.badge = "scope_changed"
+        history_entry: dict[str, Any] = {
+            "timestamp": now.isoformat(),
+            "added": added,
+            "removed": removed,
+        }
+        existing.scope_history = list(existing.scope_history or []) + [history_entry]
+
     session.flush()
     return existing, False, added, removed
+
+
+def get_bounty_program(session: Session, program_id: int) -> "BountyProgram | None":
+    """Return the BountyProgram with the given id, or None."""
+    return session.get(BountyProgram, program_id)
+
+
+def dismiss_program_badge(session: Session, program_id: int) -> None:
+    """Clear the badge field for the given BountyProgram."""
+    program = session.get(BountyProgram, program_id)
+    if program is not None:
+        program.badge = None
+        session.flush()
+
+
+def set_program_auto_recon(
+    session: Session, program_id: int, enabled: bool
+) -> None:
+    """Enable or disable auto-recon for the given BountyProgram."""
+    program = session.get(BountyProgram, program_id)
+    if program is not None:
+        program.auto_recon_enabled = enabled
+        session.flush()
 
 
 def list_bounty_programs(session: Session) -> list[dict[str, Any]]:
@@ -665,6 +705,9 @@ def list_bounty_programs(session: Session) -> list[dict[str, Any]]:
             "last_checked_at": p.last_checked_at,
             "first_seen_at": p.first_seen_at,
             "scope_count": len(p.scope or []),
+            "scope": list(p.scope or []),
+            "badge": p.badge,
+            "scope_history": list(p.scope_history or []),
         }
         for p in programs
     ]

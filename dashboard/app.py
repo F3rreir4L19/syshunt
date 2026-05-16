@@ -12,6 +12,7 @@ from core.db.queries import (
     bulk_create_targets,
     count_findings,
     create_target,
+    dismiss_program_badge,
     export_findings_csv,
     export_findings_markdown,
     get_finding,
@@ -22,6 +23,7 @@ from core.db.queries import (
     list_findings,
     list_targets,
     normalize_domain,
+    set_program_auto_recon,
     set_setting,
 )
 from core.db.session import SessionLocal
@@ -648,48 +650,160 @@ def render_placeholder_page(title: str) -> None:
 # Programs page
 # ---------------------------------------------------------------------------
 
+_BADGE_LABELS: dict[str | None, str] = {
+    "new": "NEW",
+    "scope_changed": "SCOPE CHANGED",
+    None: "",
+}
+
 
 def render_programs_page() -> None:
     st.header("Programs")
 
-    with SessionLocal() as session:
-        programs = list_bounty_programs(session)
+    try:
+        with SessionLocal() as session:
+            programs = list_bounty_programs(session)
+    except SQLAlchemyError as exc:
+        st.error(f"Database unavailable: {exc.__class__.__name__}")
+        return
 
     if not programs:
         st.info(
-            "No programs tracked yet. Configure HackerOne credentials in Settings "
-            "and trigger a sync via the scheduler."
+            "No programs tracked yet. Configure platform credentials in Settings "
+            "and wait for the scheduler to poll."
         )
         return
 
-    _BADGE_NEW = "🆕 NEW"
-    _BADGE_SCOPE = "🔄 SCOPE CHANGED"
+    # Summary metrics
+    total = len(programs)
+    new_count = sum(1 for p in programs if p["badge"] == "new")
+    changed_count = sum(1 for p in programs if p["badge"] == "scope_changed")
 
-    rows = []
-    for p in programs:
-        badge = ""
-        if st.session_state.get(f"prog_new_{p['id']}"):
-            badge = _BADGE_NEW
-        elif st.session_state.get(f"prog_scope_{p['id']}"):
-            badge = _BADGE_SCOPE
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Programs", total)
+    m2.metric("New", new_count)
+    m3.metric("Scope Changed", changed_count)
 
-        rows.append(
-            {
-                "Platform": p["platform"],
-                "Handle": p["program_handle"],
-                "Name": p["name"],
-                "Auto-recon": "✓" if p["auto_recon_enabled"] else "",
-                "Last checked": (
-                    p["last_checked_at"].strftime("%Y-%m-%d %H:%M")
-                    if p["last_checked_at"]
-                    else "—"
-                ),
-                "Scope entries": p["scope_count"],
-                "Badge": badge,
-            }
-        )
+    # Overview table
+    rows = [
+        {
+            "Platform": p["platform"],
+            "Handle": p["program_handle"],
+            "Name": p["name"],
+            "Badge": _BADGE_LABELS.get(p["badge"], ""),
+            "Auto-recon": "✓" if p["auto_recon_enabled"] else "",
+            "Last checked": (
+                p["last_checked_at"].strftime("%Y-%m-%d %H:%M")
+                if p["last_checked_at"]
+                else "—"
+            ),
+            "Scope": p["scope_count"],
+        }
+        for p in programs
+    ]
+    st.dataframe(rows, hide_index=True, use_container_width=True)
 
-    st.dataframe(rows, use_container_width=True)
+    st.divider()
+    st.subheader("Manage Program")
+
+    program_options = {
+        f"[{p['platform']}] {p['program_handle']} — {p['name']}": p for p in programs
+    }
+    selected_label = st.selectbox(
+        "Select program", list(program_options.keys()), key="programs_select"
+    )
+    if selected_label:
+        _render_program_detail(program_options[selected_label])
+
+
+def _render_program_detail(prog: dict) -> None:
+    """Render management controls and details for a single program."""
+    prog_id = prog["id"]
+    badge = prog.get("badge")
+
+    if badge == "new":
+        st.success("NEW program detected")
+    elif badge == "scope_changed":
+        st.warning("Scope has changed since last check")
+
+    # Action buttons row
+    col_dismiss, col_recon, col_auto = st.columns(3)
+
+    with col_dismiss:
+        dismiss_disabled = badge is None
+        if st.button(
+            "Dismiss badge",
+            disabled=dismiss_disabled,
+            key=f"dismiss_{prog_id}",
+            help="Clear the NEW / SCOPE CHANGED badge",
+        ):
+            try:
+                with SessionLocal() as session:
+                    dismiss_program_badge(session, prog_id)
+                    session.commit()
+                st.rerun()
+            except SQLAlchemyError as exc:
+                st.error(f"Database error: {exc.__class__.__name__}")
+
+    with col_recon:
+        if st.button(
+            "Approve & Start Recon",
+            key=f"recon_{prog_id}",
+            help="Create Targets from scope and dispatch the full pipeline",
+        ):
+            try:
+                from core.monitor.scheduler import trigger_recon_for_new_program
+
+                trigger_recon_for_new_program.apply_async(args=[prog_id])
+                # Clear badge after approval
+                with SessionLocal() as session:
+                    dismiss_program_badge(session, prog_id)
+                    session.commit()
+                st.success("Recon queued for in-scope domains.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Could not queue recon: {exc}")
+
+    with col_auto:
+        current_auto = prog["auto_recon_enabled"]
+        label = "Disable auto-recon" if current_auto else "Enable auto-recon"
+        if st.button(label, key=f"auto_{prog_id}"):
+            try:
+                with SessionLocal() as session:
+                    set_program_auto_recon(session, prog_id, not current_auto)
+                    session.commit()
+                st.rerun()
+            except SQLAlchemyError as exc:
+                st.error(f"Database error: {exc.__class__.__name__}")
+
+    # Scope entries
+    scope = prog.get("scope") or []
+    with st.expander(f"Scope entries ({len(scope)})"):
+        if scope:
+            st.dataframe(scope, hide_index=True, use_container_width=True)
+        else:
+            st.info("No scope entries recorded.")
+
+    # Scope change history
+    history = prog.get("scope_history") or []
+    with st.expander(f"Scope history ({len(history)} change(s))"):
+        if not history:
+            st.info("No scope changes recorded.")
+        else:
+            for entry in reversed(history):
+                ts = entry.get("timestamp", "unknown time")
+                added = entry.get("added") or []
+                removed = entry.get("removed") or []
+                st.caption(f"Checked at {ts}")
+                if added:
+                    st.write("**Added:**")
+                    for item in added:
+                        st.markdown(f"  - `{item}`")
+                if removed:
+                    st.write("**Removed:**")
+                    for item in removed:
+                        st.markdown(f"  - `{item}`")
+                st.divider()
 
 
 # ---------------------------------------------------------------------------

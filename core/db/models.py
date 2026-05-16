@@ -106,3 +106,5 @@ class BountyProgram(TimestampMixin, Base):
     auto_recon_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     last_checked_at: Mapped[datetime | None] = mapped_column(nullable=True)
     first_seen_at: Mapped[datetime] = mapped_column(default=utc_now)
+    badge: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    scope_history: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list_default)

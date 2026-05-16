@@ -518,11 +518,15 @@ Esses itens ficam para Fase 4, Fase 4.5 ou pós-Fase 5.
 - [x] Configuração no dashboard — seção Notifications na página Settings (Fase 3.7)
 - [x] Formatos de mensagem para `new_program` e `scope_changed` (Fase 4 Grupo 1)
 
-### Dashboard — Fase 4
+### Dashboard — Fase 4 ✅
 - [x] Página Programs básica: platform, handle, name, auto-recon, last_checked, scope entries (Grupo 1)
-- [ ] Badge NEW / SCOPE CHANGED persistido no DB
-- [ ] Botão de approve para disparar deep scan
-- [ ] Histórico de mudanças de escopo por programa
+- [x] Badge NEW / SCOPE CHANGED persistido no DB: campo `badge` em `BountyProgram`; `upsert_bounty_program` seta `"new"` no insert e `"scope_changed"` em mudança de scope (sem rebaixar de `"new"`); migration 0007
+- [x] Botão de approve para disparar deep scan: botão "Approve & Start Recon" chama `trigger_recon_for_new_program.apply_async`; badge é descartado automaticamente após aprovação
+- [x] Histórico de mudanças de escopo por programa: campo `scope_history` (JSON) acumula `{timestamp, added, removed}` por poll; expandível na página Programs
+- [x] Botão "Dismiss badge" para limpar badge manualmente
+- [x] Botão "Enable/Disable auto-recon" por programa
+- [x] Summary metrics: total de programas, new, scope changed
+- [x] `tests/unit/test_programs_queries.py` — 20 testes: badge insert/update/histórico, dismiss, set_auto_recon, list fields
 
 ---
 
