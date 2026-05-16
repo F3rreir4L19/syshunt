@@ -36,7 +36,7 @@ services:
       context: .
       dockerfile: Dockerfile.worker
     environment:
-      - DATABASE_URL=postgresql://bughunter:${DB_PASSWORD:-bughunter_dev}@db:5432/bughunter
+      - DATABASE_URL=postgresql+psycopg://bughunter:${DB_PASSWORD:-bughunter_dev}@db:5432/bughunter
       - REDIS_URL=redis://redis:6379/0
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - HACKERONE_API_TOKEN=${HACKERONE_API_TOKEN:-}
@@ -59,7 +59,7 @@ services:
       context: .
       dockerfile: Dockerfile.worker
     environment:
-      - DATABASE_URL=postgresql://bughunter:${DB_PASSWORD:-bughunter_dev}@db:5432/bughunter
+      - DATABASE_URL=postgresql+psycopg://bughunter:${DB_PASSWORD:-bughunter_dev}@db:5432/bughunter
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - redis
@@ -81,7 +81,7 @@ services:
       context: .
       dockerfile: Dockerfile.dashboard
     environment:
-      - DATABASE_URL=postgresql://bughunter:${DB_PASSWORD:-bughunter_dev}@db:5432/bughunter
+      - DATABASE_URL=postgresql+psycopg://bughunter:${DB_PASSWORD:-bughunter_dev}@db:5432/bughunter
       - REDIS_URL=redis://redis:6379/0
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-}
